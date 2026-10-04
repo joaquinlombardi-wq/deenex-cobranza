@@ -1,0 +1,9 @@
+{
+  "name": "deenex-cobranza",
+  "private": true,
+  "workspaces": ["server"],
+  "scripts": {
+    "test": "npm test --workspace server",
+    "dev": "npm run dev --workspace server"
+  }
+}

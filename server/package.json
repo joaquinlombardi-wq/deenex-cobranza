@@ -1,0 +1,16 @@
+{
+  "name": "@deenex-cobranza/server",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "dependencies": {
+    "decimal.js": "^10.6.0",
+    "express": "^5.2.1",
+    "mongoose": "^9.10.4"
+  }
+}
