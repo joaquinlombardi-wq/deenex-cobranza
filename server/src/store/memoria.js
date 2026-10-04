@@ -1,6 +1,6 @@
 // Store en memoria para probar el sistema sin MongoDB (modo demo). Se pierde al reiniciar.
 export function crearStoreMemoria({ clientes = [], ventas = [] } = {}) {
-  const datos = { clientes: structuredClone(clientes), ventas: structuredClone(ventas) };
+  const datos = { clientes: structuredClone(clientes), ventas: structuredClone(ventas), ipc: {}, cierres: new Map() };
   const clave = (v) => `${v.local_id}|${v.periodo}|${v.canal}`;
   return {
     listarClientes: async () => [...datos.clientes].sort((a, b) => a.nombre.localeCompare(b.nombre)),
@@ -22,5 +22,9 @@ export function crearStoreMemoria({ clientes = [], ventas = [] } = {}) {
       datos.ventas = [...porClave.values()];
     },
     listarVentas: async (periodo) => datos.ventas.filter((v) => !periodo || v.periodo === periodo),
+    obtenerIpc: async () => datos.ipc,
+    guardarIpc: async (valores) => { datos.ipc = valores; },
+    obtenerCierre: async (periodo) => datos.cierres.get(periodo) ?? null,
+    guardarCierre: async (cierre) => { datos.cierres.set(cierre.periodo, cierre); },
   };
 }

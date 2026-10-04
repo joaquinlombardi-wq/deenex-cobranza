@@ -1,18 +1,5 @@
-async function pedir(metodo, url, cuerpo) {
-  const res = await fetch(`/api${url}`, {
-    method: metodo,
-    headers: cuerpo ? { 'Content-Type': 'application/json' } : undefined,
-    body: cuerpo ? JSON.stringify(cuerpo) : undefined,
-  });
-  const datos = await res.json();
-  if (!res.ok) throw new Error(datos.error ?? `Error ${res.status}`);
-  return datos;
-}
+import { api as http } from './backend/http.js';
+import { api as artifact } from './backend/artifact.js';
 
-export const api = {
-  clientes: () => pedir('GET', '/clientes'),
-  crearCliente: (c) => pedir('POST', '/clientes', c),
-  actualizarCliente: (c) => pedir('PUT', `/clientes/${c.id}`, c),
-  simular: (cuerpo) => pedir('POST', '/simular', cuerpo),
-  liquidar: (cuerpo) => pedir('POST', '/liquidaciones', cuerpo),
-};
+// `vite build --mode artifact` arma la versión publicada en claude.ai; el resto usa la API Express.
+export const api = import.meta.env.MODE === 'artifact' ? artifact : http;

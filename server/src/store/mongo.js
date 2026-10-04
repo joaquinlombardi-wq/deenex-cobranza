@@ -4,6 +4,8 @@ import { Venta } from '../models/Venta.js';
 
 export async function crearStoreMongo(uri) {
   await mongoose.connect(uri);
+  const parametros = mongoose.connection.collection('parametros');
+  const cierres = mongoose.connection.collection('cierres');
   return {
     listarClientes: () => Cliente.find().sort({ nombre: 1 }).lean(),
     obtenerCliente: (id) => Cliente.findOne({ id }).lean(),
@@ -16,5 +18,9 @@ export async function crearStoreMongo(uri) {
         })),
       ),
     listarVentas: (periodo) => Venta.find(periodo ? { periodo } : {}).lean(),
+    obtenerIpc: async () => (await parametros.findOne({ _id: 'ipc' }))?.valores ?? {},
+    guardarIpc: (valores) => parametros.updateOne({ _id: 'ipc' }, { $set: { valores } }, { upsert: true }),
+    obtenerCierre: (periodo) => cierres.findOne({ _id: periodo }, { projection: { _id: 0 } }),
+    guardarCierre: (cierre) => cierres.replaceOne({ _id: cierre.periodo }, cierre, { upsert: true }),
   };
 }

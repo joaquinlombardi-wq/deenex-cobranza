@@ -54,7 +54,17 @@ export function crearApi(store) {
         return { cliente: { id: c.id, nombre: c.nombre }, periodo, error: e.message, liquidaciones: [], avisos: [] };
       }
     });
+    await store.guardarCierre({ periodo, mep, ipc, generadoEn: new Date().toISOString(), resultados });
     res.json(resultados);
+  });
+
+  api.get('/cierres/:periodo', async (req, res) => res.json(await store.obtenerCierre(req.params.periodo)));
+
+  // Serie de IPC mensual { 'AAAA-MM': 0.021 }, se va completando mes a mes.
+  api.get('/ipc', async (_req, res) => res.json(await store.obtenerIpc()));
+  api.put('/ipc', async (req, res) => {
+    await store.guardarIpc(req.body);
+    res.json(req.body);
   });
 
   api.use((err, _req, res, _next) => {

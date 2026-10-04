@@ -41,3 +41,7 @@ Con base real: `MONGODB_URI=mongodb://127.0.0.1:27017/deenex-cobranza npm run de
 ```
 
 `local_id` es el `plataformaId` del local cargado en el cliente. Si un local no vendió en un canal, mandar la fila con 0.
+
+## Versión publicada en claude.ai
+
+`npm run build:artifact --workspace client` arma `client/dist-artifact/cobranza.html`: el mismo frontend con el motor corriendo en el navegador y los datos en la base del artifact (`client/src/backend/artifact.js`). Es la versión que usa Joaco mientras no haya un servidor con MongoDB. Colecciones: `clientes/<id>`, `ventas/<AAAA-MM>` (`{ filas }`), `parametros/ipc` (`{ valores }`), `cierres/<AAAA-MM>`.

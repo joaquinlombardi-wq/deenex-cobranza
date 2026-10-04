@@ -16,6 +16,7 @@ export default function Liquidacion({ liquidacion }) {
         <span className="flecha">{abierta ? '▾' : '▸'}</span>
       </button>
       {abierta && (
+        <div className="scroll-x">
         <table className="renglones">
           <thead>
             <tr>
@@ -50,6 +51,7 @@ export default function Liquidacion({ liquidacion }) {
             </tr>
           </tfoot>
         </table>
+        </div>
       )}
     </div>
   );

@@ -38,3 +38,13 @@ export function resumenAcuerdo(a) {
   if (a.ajusteIpc?.activo) partes.push('ajusta por IPC');
   return partes.join(' · ') || 'Solo extras';
 }
+
+// Lee montos escritos a la argentina ("1.244.000,50") o con punto decimal ("1244000.50").
+export function leerMonto(texto) {
+  if (texto == null) return NaN;
+  let t = String(texto).trim().replace(/[$\s]/g, '');
+  if (t === '') return NaN;
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+  return Number(t);
+}

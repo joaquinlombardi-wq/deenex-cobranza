@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api.js';
-import { pesos, slug, periodoMas, periodoActual, nombrePeriodo } from '../formato.js';
+import { pesos, slug, periodoMas, periodoActual, nombrePeriodo, leerMonto } from '../formato.js';
 import Liquidacion from './Liquidacion.jsx';
 
 const PASOS = ['Marca', 'Franquiciados', 'Locales', 'Acuerdo', 'Extras', 'Simulación'];
@@ -342,7 +342,8 @@ function Simulacion({ cliente }) {
   async function simular() {
     setError('');
     try {
-      setResultado(await api.simular({ cliente, periodo, mep: Number(mep.replace(/\./g, '').replace(',', '.')) }));
+      const ipc = await api.ipc().catch(() => ({}));
+      setResultado(await api.simular({ cliente, periodo, mep: leerMonto(mep) || null, ipc }));
     } catch (e) {
       setResultado(null);
       setError(e.message);

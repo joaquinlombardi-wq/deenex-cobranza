@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:artifact": "vite build --mode artifact && node scripts/armar-artifact.mjs"
   },
   "dependencies": {
     "react": "^19.3.0",

@@ -14,7 +14,14 @@ export default function Clientes({ onNuevo, onEditar }) {
         <h1>Clientes</h1>
         <button className="primario" onClick={onNuevo}>+ Nuevo cliente</button>
       </div>
-      <div className="panel">
+      {clientes?.length === 0 && (
+        <div className="panel vacio">
+          <strong>Todavía no hay clientes.</strong>
+          <p>Cada cliente lleva su marca, sus franquiciados si tiene, los locales y el acuerdo. Con eso el cierre del mes calcula solo lo que paga cada uno.</p>
+          <button className="primario" onClick={onNuevo}>Cargar el primer cliente</button>
+        </div>
+      )}
+      <div className="panel scroll-x" hidden={!clientes?.length}>
         <table className="tabla">
           <thead>
             <tr><th>Cliente</th><th>Quién paga</th><th className="num">Locales</th><th>Acuerdo</th><th /></tr>
