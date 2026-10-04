@@ -2,21 +2,25 @@
 
 Calcula a principio de cada mes cuánto tiene que pagar cada pagador (marca o franquiciado) según el acuerdo cargado para cada cliente.
 
-Stack: MongoDB + Express + React + Node. El frontend (React) se suma en el próximo paso.
+Stack: MongoDB + Express + React (Vite) + Node.
 
 ## Correr
 
 ```bash
 npm install
-npm test          # motor de cálculo contra los casos reales de octubre 2026
-MONGODB_URI=mongodb://127.0.0.1:27017/deenex-cobranza npm run dev
+npm test             # motor de cálculo contra los casos reales de octubre 2026
+npm run dev:server   # API en :4000. Sin MONGODB_URI arranca en modo demo (en memoria, con clientes de ejemplo)
+npm run dev:client   # pantallas en http://localhost:5173
 ```
+
+Con base real: `MONGODB_URI=mongodb://127.0.0.1:27017/deenex-cobranza npm run dev:server`.
 
 ## Estructura
 
 - `server/src/engine/` · motor de cálculo puro (sin base de datos). `liquidarCliente(cliente, { periodo, mep, ipc, ventas })`.
 - `server/src/models/` · esquemas de Mongo: `Cliente` (marca, franquiciados, locales, acuerdos, extras) y `Venta`.
-- `server/src/routes/api.js` · API REST.
+- `server/src/routes/api.js` · API REST. `server/src/store/` · Mongo o memoria (modo demo).
+- `client/` · React: Cierre del mes, Clientes y Alta de cliente (5 pasos + simulación).
 - `server/test/` · tests. `octubre-2026.test.js` reproduce la facturación real emitida ($ 14.472.791,22).
 
 ## Reglas de cálculo

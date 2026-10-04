@@ -12,6 +12,9 @@ export function nombrePeriodo(periodo) {
 const formatoArs = (v) =>
   '$ ' + D(v).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 
+// 45 -> '45', 45.5 -> '45,50'
+const montoCorto = (v) => (D(v).isInteger() ? D(v).toString() : D(v).toFixed(2).replace('.', ','));
+
 const pct = (v) => `${D(v).times(100).toString().replace('.', ',')}%`;
 
 export class ErrorLiquidacion extends Error {}
@@ -137,7 +140,7 @@ function renglonesFeePorLocal(cliente, acuerdo, periodo, contexto) {
       pagador: g.pagador,
       renglon: renglon({
         tipo: 'feePorLocal',
-        detalle: `Servicio full - ${g.cantidad} ${g.cantidad === 1 ? 'local' : 'locales'} x ${moneda} ${g.precio.toFixed(2)} - ${mes}`,
+        detalle: `Servicio full - ${g.cantidad} ${g.cantidad === 1 ? 'local' : 'locales'} x ${moneda} ${montoCorto(g.precio)} - ${mes}`,
         cantidad: g.cantidad,
         moneda,
         precioUnitario: g.precio,
@@ -243,7 +246,7 @@ function combinarHibrido(acuerdo, renglones, contexto) {
     if (sumar(comisiones, 'brutoArs').lte(topeArs)) return renglones;
     const tope = renglon({
       tipo: 'comision',
-      detalle: `Comisión con tope (${acuerdo.moneda} ${D(regla.tope).toFixed(2)}) - ${nombrePeriodo(periodoAnterior(contexto.periodo))}`,
+      detalle: `Comisión con tope (${acuerdo.moneda} ${montoCorto(regla.tope)}) - ${nombrePeriodo(periodoAnterior(contexto.periodo))}`,
       cantidad: 1,
       moneda: acuerdo.moneda,
       precioUnitario: regla.tope,
