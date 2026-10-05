@@ -15,7 +15,34 @@ export const periodoMas = (p, n) => {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 };
 
-export const periodoActual = () => new Date().toISOString().slice(0, 7);
+// Fecha de hoy en la hora local de quien usa el sistema ('AAAA-MM-DD').
+export const hoyLocal = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+export const periodoActual = () => hoyLocal().slice(0, 7);
+
+// '2026-10-05' -> '05/10/2026'
+export const fechaCorta = (f) => (f ? `${f.slice(8, 10)}/${f.slice(5, 7)}/${f.slice(0, 4)}` : '');
+
+const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+export const diaSemana = (f) => DIAS[new Date(`${f}T12:00:00`).getDay()];
+
+export const fechaHora = (iso) => (iso ? new Date(iso).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short', hourCycle: 'h23' }) : '');
+
+// 0.021 -> '2,1'
+export const porcentaje = (fraccion, decimales = 2) =>
+  fraccion == null ? '' : (+(fraccion * 100).toFixed(decimales)).toLocaleString('es-AR', { maximumFractionDigits: decimales });
+
+export const ESTADOS_CUENTA = {
+  'al-dia': { texto: 'Al día', clase: 'ok' },
+  pendiente: { texto: 'Pendiente', clase: 'aviso' },
+  parcial: { texto: 'Pago parcial', clase: 'aviso' },
+  vencido: { texto: 'Vencido', clase: 'error' },
+  pagado: { texto: 'Pagado', clase: 'ok' },
+  'sin-movimientos': { texto: 'Sin movimientos', clase: 'neutro' },
+};
 
 export const slug = (texto) =>
   texto

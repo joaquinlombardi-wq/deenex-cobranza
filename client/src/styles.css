@@ -109,6 +109,7 @@ tfoot td { font-weight: 700; border-bottom: 0; }
 }
 .formulario .cabecera-cliente { margin-top: 20px; }
 .num, .monto, .resumen strong, .renglones td.num { font-family: var(--fuente-num); font-size: 0.95em; }
+th.num { font-family: var(--fuente); font-size: inherit; }
 .resumen strong { font-size: 24px; }
 h1, h2 { text-wrap: balance; }
 .alerta.ok { background: var(--verde-fondo); color: var(--verde); }
@@ -126,3 +127,50 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 button:disabled { opacity: .6; cursor: default; }
 .link { cursor: pointer; font: inherit; }
 .renglones { min-width: 640px; }
+
+/* Estados de cuenta y cotizaciones */
+.estado { display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 99px; white-space: nowrap; }
+.estado.ok { background: var(--verde-fondo); color: var(--verde); }
+.estado.aviso { background: var(--naranja-fondo); color: var(--naranja); }
+.estado.error { background: var(--rojo-fondo); color: var(--rojo); }
+.estado.neutro { background: var(--panel-2); color: var(--suave); border: 1px solid var(--borde); }
+.rojo { color: var(--rojo); }
+.resumen strong.chico { font-size: 17px; line-height: 1.5; }
+.confirmacion { display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; border-color: var(--acento); }
+.confirmacion p { margin: 0; max-width: 70ch; min-width: 0; flex: 1 1 320px; }
+.confirmacion.hecha { border-color: var(--borde); background: var(--verde-fondo); color: var(--verde); }
+.con-ayuda { max-width: 260px; }
+.con-ayuda small { color: var(--suave); font-size: 12px; line-height: 1.35; min-height: 2.7em; }
+.parametros { align-items: flex-start; }
+.parametros > .primario { align-self: flex-start; margin-top: 22px; }
+.fila-click { cursor: pointer; }
+.fila-click:hover td { background: var(--panel-2); }
+.acciones-fila { white-space: nowrap; text-align: right; }
+.acciones-fila > * + * { margin-left: 12px; }
+.botones { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.form-pago { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-top: 14px; padding: 14px; border: 1px solid var(--borde); border-radius: 10px; background: var(--panel-2); }
+.form-pago label, .form-linea label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--suave); }
+.form-pago .ancho, .form-pago .botones, .form-pago .alerta { grid-column: 1 / -1; }
+.form-pago .botones { margin-top: 0; }
+.titulo-pagador { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.cuenta .cabecera-cliente { gap: 12px; flex-wrap: wrap; }
+.volver { margin-bottom: 10px; display: inline-block; }
+.sin-margen { margin: 4px 0 0; }
+.dos-columnas { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
+.dos-columnas > .panel { min-width: 0; margin-bottom: 0; }
+.parametros.compacto { gap: 16px; align-items: flex-end; margin: 12px 0; }
+.dato { display: flex; flex-direction: column; gap: 2px; margin: 8px 0 12px; }
+.dato strong { font-family: var(--fuente-num); font-size: 22px; }
+.origen { font-size: 12px; color: var(--suave); }
+.origen.manual { color: var(--naranja); }
+.form-linea { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-top: 14px; }
+.form-linea label { flex: 1 1 140px; }
+.detalle-cargo > td { background: var(--panel-2); padding: 4px 10px 12px; }
+.detalle-cargo .renglones { min-width: 0; }
+.tabla.serie td, .tabla.serie th { padding: 6px 10px; }
+.movimientos td { white-space: nowrap; }
+@media (max-width: 700px) {
+  .con-ayuda { max-width: none; }
+  .parametros > .primario { margin-top: 0; }
+  .acciones-fila { white-space: normal; }
+}

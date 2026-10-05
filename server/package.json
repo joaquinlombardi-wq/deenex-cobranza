@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test \"test/**/*.test.js\"",
+    "cotizaciones": "node scripts/cotizaciones.mjs"
   },
   "dependencies": {
     "decimal.js": "^10.6.0",

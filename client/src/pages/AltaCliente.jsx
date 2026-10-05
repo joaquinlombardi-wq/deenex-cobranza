@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { api } from '../api.js';
-import { pesos, slug, periodoMas, periodoActual, nombrePeriodo, leerMonto } from '../formato.js';
+import { pesos, slug, periodoMas, periodoActual, nombrePeriodo, leerMonto, hoyLocal } from '../formato.js';
 import Liquidacion from './Liquidacion.jsx';
 
 const PASOS = ['Marca', 'Franquiciados', 'Locales', 'Acuerdo', 'Extras', 'Simulación'];
 
-const hoy = () => new Date().toISOString().slice(0, 10);
+const hoy = hoyLocal;
 
 const clienteVacio = () => ({
   id: '',
@@ -16,6 +16,7 @@ const clienteVacio = () => ({
   domicilioFiscal: '',
   contacto: { nombre: '', email: '', telefono: '' },
   quienPaga: 'marca',
+  diaVencimiento: 10,
   franquiciados: [],
   locales: [],
   acuerdos: [{ vigenciaDesde: periodoActual(), moneda: 'USD', combinacion: { modo: 'suma' }, prorrateo: { modo: 'completo' } }],
@@ -79,15 +80,18 @@ export default function AltaCliente({ inicial, onListo }) {
         {actual === 'Marca' && (
           <>
             <div className="grilla">
-              <Campo label="Nombre comercial"><input value={c.nombre} onChange={(e) => cambiar('nombre', e.target.value)} /></Campo>
-              <Campo label="Razón social"><input value={c.razonSocial} onChange={(e) => cambiar('razonSocial', e.target.value)} /></Campo>
-              <Campo label="CUIT"><input placeholder="30-12345678-9" value={c.cuit} onChange={(e) => cambiar('cuit', e.target.value)} /></Campo>
+              <Campo label="Nombre comercial"><input id="cliente-nombre" value={c.nombre} onChange={(e) => cambiar('nombre', e.target.value)} /></Campo>
+              <Campo label="Razón social"><input id="cliente-razon-social" value={c.razonSocial ?? ''} onChange={(e) => cambiar('razonSocial', e.target.value)} /></Campo>
+              <Campo label="CUIT"><input id="cliente-cuit" placeholder="30-12345678-9" value={c.cuit ?? ''} onChange={(e) => cambiar('cuit', e.target.value)} /></Campo>
               <Campo label="Condición frente al IVA">
-                <select value={c.condicionIva} onChange={(e) => cambiar('condicionIva', e.target.value)}>
+                <select value={c.condicionIva ?? 'Responsable Inscripto'} onChange={(e) => cambiar('condicionIva', e.target.value)}>
                   <option>Responsable Inscripto</option><option>Monotributo</option><option>Exento</option>
                 </select>
               </Campo>
-              <Campo label="Domicilio fiscal" ancho><input value={c.domicilioFiscal} onChange={(e) => cambiar('domicilioFiscal', e.target.value)} /></Campo>
+              <Campo label="Vence el día (de cada mes)">
+                <input id="cliente-vencimiento" type="number" min="1" max="31" value={c.diaVencimiento ?? 10} onChange={(e) => cambiar('diaVencimiento', e.target.value === '' ? undefined : Number(e.target.value))} />
+              </Campo>
+              <Campo label="Domicilio fiscal" ancho><input id="cliente-domicilio" value={c.domicilioFiscal ?? ''} onChange={(e) => cambiar('domicilioFiscal', e.target.value)} /></Campo>
             </div>
             <h3>Contacto de cobranza</h3>
             <div className="grilla">

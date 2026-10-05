@@ -1,7 +1,7 @@
 // Clientes de ejemplo para el modo demo: los reales de octubre 2026 y una marca con franquicias inventada.
 import * as octubre from '../test/casos-octubre-2026.js';
 
-export function datosDemo() {
+export function documentosDemo() {
   const marcaDemo = {
     id: 'sushi-demo',
     nombre: 'Sushi Demo (franquicias, ejemplo)',
@@ -40,8 +40,11 @@ export function datosDemo() {
   ]);
   const ventasQuemOctubre = octubre.ventasQuemSeptiembre.map((v) => ({ ...v, periodo: '2026-10', total_con_iva: v.total_con_iva * 1.1 }));
 
-  return {
-    clientes: [octubre.laFabrica, octubre.meetAndEat, octubre.quem, octubre.quemCentral, octubre.konex, octubre.pannus, marcaDemo],
-    ventas: [...octubre.ventasQuemSeptiembre, ...ventasQuemOctubre, ...ventasDemo],
-  };
+  const clientes = [octubre.laFabrica, octubre.meetAndEat, octubre.quem, octubre.quemCentral, octubre.konex, octubre.pannus, marcaDemo];
+  const ventas = [...octubre.ventasQuemSeptiembre, ...ventasQuemOctubre, ...ventasDemo];
+  const periodos = [...new Set(ventas.map((v) => v.periodo))];
+  return [
+    ...clientes.map((c) => ({ path: `clientes/${c.id}`, data: c })),
+    ...periodos.map((p) => ({ path: `ventas/${p}`, data: { periodo: p, filas: ventas.filter((v) => v.periodo === p) } })),
+  ];
 }
