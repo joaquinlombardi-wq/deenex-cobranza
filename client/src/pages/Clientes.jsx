@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { estadoDeCuenta } from '../../../server/src/engine/cuentaCorriente.js';
-import { resumenAcuerdo, pesos, hoyLocal, ESTADOS_CUENTA } from '../formato.js';
+import { resumenAcuerdo, resumenLocales, pesos, hoyLocal, ESTADOS_CUENTA } from '../formato.js';
+import { usaLocales } from '../../../server/src/engine/clientes.js';
 
 const acuerdoActual = (c) => [...(c.acuerdos ?? [])].sort((a, b) => b.vigenciaDesde.localeCompare(a.vigenciaDesde))[0];
 
@@ -53,7 +54,7 @@ export default function Clientes({ onNuevo, onEditar, onVerCuenta }) {
       {clientes?.length === 0 && (
         <div className="panel vacio">
           <strong>Todavía no hay clientes.</strong>
-          <p>Cada cliente lleva su marca, sus franquiciados si tiene, los locales y el acuerdo. Con eso el cierre del mes calcula solo lo que paga cada uno.</p>
+          <p>Cada cliente lleva su marca, cuántos locales propios y franquiciados tiene y el acuerdo. Con eso el cierre del mes calcula solo lo que paga cada uno.</p>
           <button className="primario" onClick={onNuevo}>Cargar el primer cliente</button>
         </div>
       )}
@@ -76,7 +77,7 @@ export default function Clientes({ onNuevo, onEditar, onVerCuenta }) {
                 <tr key={c.id} className="fila-click" onClick={() => onVerCuenta(c)}>
                   <td>
                     <strong>{c.nombre}</strong>
-                    <div className="cuit">{c.locales.length ? `${c.locales.length} ${c.locales.length === 1 ? 'local' : 'locales'}` : 'Sin locales'}{c.cuit ? ` · CUIT ${c.cuit}` : ''}</div>
+                    <div className="cuit">{[resumenLocales(c) || (usaLocales(acuerdoActual(c)) && 'Sin locales cargados'), c.cuit && `CUIT ${c.cuit}`].filter(Boolean).join(' · ')}</div>
                   </td>
                   <td>{c.quienPaga === 'franquiciados' ? `Cada franquiciado (${c.franquiciados.length})` : 'La marca'}</td>
                   <td>{resumenAcuerdo(acuerdoActual(c))}</td>

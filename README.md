@@ -29,9 +29,11 @@ Con base real: `MONGODB_URI=mongodb://127.0.0.1:27017/deenex-cobranza npm run de
 - Fee por local y fee fijo: mes en curso. Comisión: mes vencido, sobre ventas del mes anterior **con IVA y sin envío**.
 - USD × dólar MEP venta del día (dolarhoy). ARS con ajuste: × (1 + último IPC publicado, el de M-2), acumulado mes a mes.
 - IVA 21% por renglón, salvo conceptos marcados sin IVA. Cada renglón se redondea al centavo.
+- Es solo financiero: cada cliente tiene cuántos locales propios y cuántos franquiciados, no una lista de locales. Todos los propios pagan lo mismo; los franquiciados pagan lo mismo o tienen su propio precio y comisión (`feePorLocal.precioFranquiciado`, `comisionFranquiciado`). Ver `server/src/engine/clientes.js`.
+- Fee mensual fijo: no depende de los locales ni de los franquiciados y lo paga la marca.
 - Si paga cada franquiciado: una liquidación por franquiciado con sus locales y una a la marca con los propios y los extras.
 - Híbrido: `suma` (por defecto), `mayor` (fee o comisión, lo que sea mayor) o `tope` (comisión con máximo).
-- Prorrateo de locales que abren o cierran en el mes: `completo` (por defecto), `proporcional` o `corte` (no paga si abrió después del día N).
+- No hay prorrateo: un local que abre a mitad de mes se cobra como un extra de ese mes.
 
 ## Cuentas corrientes
 
@@ -50,13 +52,13 @@ Con base real: `MONGODB_URI=mongodb://127.0.0.1:27017/deenex-cobranza npm run de
 
 ## Ventas desde la plataforma (para los devs)
 
-`POST /api/ventas` con una fila (o un array) por local × mes × canal:
+`POST /api/ventas` con una fila (o un array) por cliente × grupo de locales × mes × canal, con el total del grupo:
 
 ```json
-{ "local_id": "quem-palermo", "periodo": "2026-09", "canal": "delivery", "total_con_iva": 1244000.00, "cantidad_pedidos": 812 }
+{ "cliente_id": "quem", "grupo": "propios", "periodo": "2026-09", "canal": "delivery", "total_con_iva": 1244000.00 }
 ```
 
-`local_id` es el `plataformaId` del local cargado en el cliente. Si un local no vendió en un canal, mandar la fila con 0.
+`grupo` es `propios` (los locales propios), `franquiciados` (los franquiciados, cuando paga la marca) o el `id` del franquiciado (cuando paga cada uno). Si la marca paga todo con la misma comisión también sirve un solo total con `"grupo": "todos"`. Si un grupo no vendió en un canal, mandar la fila con 0.
 
 ## Versión publicada en claude.ai
 
@@ -66,8 +68,8 @@ Documentos (los mismos en el artifact y en Mongo):
 
 | Ruta | Contenido |
 | --- | --- |
-| `clientes/<id>` | el cliente: marca, franquiciados, locales, acuerdos, extras, `diaVencimiento` |
-| `ventas/<AAAA-MM>` | `{ filas: [{ local_id, periodo, canal, total_con_iva }] }` |
+| `clientes/<id>` | el cliente: marca, cantidad de locales propios y franquiciados, franquiciados que pagan, acuerdos, extras, `diaVencimiento` |
+| `ventas/<AAAA-MM>` | `{ filas: [{ cliente_id, grupo, periodo, canal, total_con_iva }] }` |
 | `cierres/<AAAA-MM>` | `{ periodo, mep, fechaMep, generadoEn, resultados, confirmado }` |
 | `cargos/<AAAA-MM>~<cliente>~<pagador>` | lo que debe un pagador por un mes, con sus renglones |
 | `pagos/<fecha>~<id>` | `{ clienteId, pagadorId, fecha, montoArs, medio, nota }` |

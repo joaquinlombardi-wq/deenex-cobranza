@@ -1,6 +1,7 @@
 import { D, redondear, IVA_GENERAL } from './dinero.js';
-import { periodoAnterior, diasDelMes, diasActivos, compararPeriodos, periodoDe } from './periodos.js';
+import { periodoAnterior, compararPeriodos } from './periodos.js';
 import { PRODUCTOS_DUX } from './productosDux.js';
+import { normalizarCliente, gruposDeLocales, gruposDeVentas } from './clientes.js';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
@@ -58,36 +59,6 @@ function datosPagador(cliente, idPagador) {
   return { tipo: 'franquiciado', id: f.id, nombre: f.razonSocial, ...f };
 }
 
-function pagadorDeLocal(cliente, local) {
-  if (cliente.quienPaga !== 'franquiciados' || local.tipo === 'propio') return 'marca';
-  if (!local.franquiciadoId) {
-    throw new ErrorLiquidacion(`El local "${local.nombre}" es franquiciado pero no tiene franquiciado asignado.`);
-  }
-  return local.franquiciadoId;
-}
-
-function precioDeLocal(fee, local) {
-  if (local.precio != null) return local.precio;
-  if (local.tipo === 'propio' && fee.precioPropio != null) return fee.precioPropio;
-  if (local.tipo === 'franquiciado' && fee.precioFranquiciado != null) return fee.precioFranquiciado;
-  return fee.precio;
-}
-
-// Qué parte del mes se le cobra a un local según la regla de prorrateo del acuerdo.
-function factorProrrateo(acuerdo, local, periodo) {
-  const dias = diasActivos(local, periodo);
-  if (dias === 0) return { factor: D(0) };
-  const regla = acuerdo.prorrateo ?? { modo: 'completo' };
-  if (regla.modo === 'proporcional') {
-    const total = diasDelMes(periodo);
-    return dias === total ? { factor: D(1) } : { factor: D(dias).div(total), nota: `proporcional ${dias}/${total} días` };
-  }
-  if (regla.modo === 'corte' && periodoDe(local.alta) === periodo && Number(local.alta.slice(8, 10)) > regla.dia) {
-    return { factor: D(0) };
-  }
-  return { factor: D(1) };
-}
-
 function renglon({ tipo, detalle, cantidad, moneda, precioUnitario, mep, conIva = true }) {
   const cotizacion = moneda === 'USD' ? D(mep) : D(1);
   const bruto = redondear(D(cantidad).times(precioUnitario).times(cotizacion));
@@ -111,57 +82,42 @@ function renglon({ tipo, detalle, cantidad, moneda, precioUnitario, mep, conIva 
 
 const sumar = (renglones, campo) => renglones.reduce((s, r) => s.plus(r[campo]), D(0));
 
+// Fee por local: cantidad de locales de cada grupo x su precio. Los grupos de un mismo pagador
+// con el mismo precio van en un solo renglón.
 function renglonesFeePorLocal(cliente, acuerdo, periodo, contexto) {
   const fee = acuerdo.feePorLocal;
   if (!fee) return [];
-  const mes = nombrePeriodo(periodo);
-  const grupos = new Map();
-  const sueltos = [];
-
-  for (const local of cliente.locales ?? []) {
-    const { factor, nota } = factorProrrateo(acuerdo, local, periodo);
-    if (factor.isZero()) continue;
-    const pagador = pagadorDeLocal(cliente, local);
-    const precio = ajustarMonto(precioDeLocal(fee, local), contexto.pasosIpc);
-    if (nota) {
-      sueltos.push({ pagador, local, precio: redondear(precio.times(factor)), nota });
-      continue;
-    }
-    const clave = `${pagador}|${precio}`;
-    const g = grupos.get(clave) ?? { pagador, precio, cantidad: 0 };
-    g.cantidad += 1;
-    grupos.set(clave, g);
+  const juntos = new Map();
+  for (const g of gruposDeLocales(cliente)) {
+    const base = g.franquicia ? fee.precioFranquiciado ?? fee.precio : fee.precio;
+    if (base == null) throw new ErrorLiquidacion(`Falta el precio por local de ${cliente.nombre}.`);
+    const precio = ajustarMonto(base, contexto.pasosIpc);
+    const clave = `${g.pagador}|${precio}`;
+    const x = juntos.get(clave) ?? { pagador: g.pagador, precio, cantidad: 0, tipos: new Set() };
+    x.cantidad += g.locales;
+    x.tipos.add(g.franquicia ? 'franquiciado' : 'propio');
+    juntos.set(clave, x);
   }
 
   const moneda = acuerdo.moneda;
-  const out = [];
-  for (const g of grupos.values()) {
-    out.push({
+  const grupos = [...juntos.values()];
+  return grupos.map((g) => {
+    // Si la marca paga propios y franquiciados a precios distintos, el renglón dice cuál es cuál.
+    const separa = g.tipos.size === 1 && grupos.filter((o) => o.pagador === g.pagador).length > 1;
+    const que = g.cantidad === 1 ? 'local' : 'locales';
+    const tipo = separa ? ` ${[...g.tipos][0]}${g.cantidad === 1 ? '' : 's'}` : '';
+    return {
       pagador: g.pagador,
       renglon: renglon({
         tipo: 'feePorLocal',
-        detalle: `Servicio full - ${g.cantidad} ${g.cantidad === 1 ? 'local' : 'locales'} x ${moneda} ${montoCorto(g.precio)} - ${mes}`,
+        detalle: `Servicio full - ${g.cantidad} ${que}${tipo} x ${moneda} ${montoCorto(g.precio)} - ${nombrePeriodo(periodo)}`,
         cantidad: g.cantidad,
         moneda,
         precioUnitario: g.precio,
         mep: contexto.mep,
       }),
-    });
-  }
-  for (const s of sueltos) {
-    out.push({
-      pagador: s.pagador,
-      renglon: renglon({
-        tipo: 'feePorLocal',
-        detalle: `Servicio full - ${s.local.nombre} (${s.nota}) - ${mes}`,
-        cantidad: 1,
-        moneda,
-        precioUnitario: s.precio,
-        mep: contexto.mep,
-      }),
-    });
-  }
-  return out;
+    };
+  });
 }
 
 function renglonesFeeFijo(acuerdo, periodo, contexto) {
@@ -184,48 +140,52 @@ function renglonesFeeFijo(acuerdo, periodo, contexto) {
 
 const CANALES = ['delivery', 'takeaway'];
 
+// Ventas de un grupo en un canal: su fila, o la suma de las de sus partes si propios y
+// franquiciados se cobran juntos pero llegaron por separado.
+function ventasDeGrupo(filas, grupo, canal) {
+  const de = (id) => filas.find((v) => v.grupo === id && v.canal === canal);
+  const total = de(grupo.id);
+  if (total) return D(total.total_con_iva);
+  if (grupo.miembros.length < 2) return null;
+  const partes = grupo.miembros.map(de);
+  return partes.every(Boolean) ? partes.reduce((s, p) => s.plus(p.total_con_iva), D(0)) : null;
+}
+
 // Comisión mes vencido: se cobra en M sobre las ventas de M-1 (total con IVA, sin envío).
+// Las ventas llegan por cliente y grupo de locales: { cliente_id, grupo, periodo, canal, total_con_iva }.
 function renglonesComision(cliente, periodo, ventas, avisos) {
   const periodoVentas = periodoAnterior(periodo);
   const acuerdo = acuerdoVigente(cliente, periodoVentas);
-  const comision = acuerdo?.comision;
-  if (!comision) return [];
+  if (!acuerdo?.comision) return [];
 
-  const filas = (ventas ?? []).filter((v) => v.periodo === periodoVentas);
+  const filas = (ventas ?? []).filter((v) => v.periodo === periodoVentas && v.cliente_id === cliente.id);
   const bases = new Map();
-
-  for (const local of cliente.locales ?? []) {
-    if (diasActivos(local, periodoVentas) === 0) continue;
-    const idPlataforma = local.plataformaId ?? local.id;
-    const pagador = pagadorDeLocal(cliente, local);
+  for (const g of gruposDeVentas(cliente, acuerdo)) {
     for (const canal of CANALES) {
-      if (comision[canal] == null) continue;
-      const fila = filas.find((v) => v.local_id === idPlataforma && v.canal === canal);
-      if (!fila) {
-        avisos.push(`Faltan las ventas de ${canal} de ${nombrePeriodo(periodoVentas)} del local "${local.nombre}".`);
+      const tasa = g.tasas[canal];
+      if (tasa == null) continue;
+      const total = ventasDeGrupo(filas, g, canal);
+      if (!total) {
+        avisos.push(`Faltan las ventas de ${canal} de ${nombrePeriodo(periodoVentas)} de ${g.nombre}.`);
         continue;
       }
-      const clave = `${pagador}|${canal}`;
-      bases.set(clave, (bases.get(clave) ?? D(0)).plus(fila.total_con_iva));
+      const clave = `${g.pagador}|${canal}|${tasa}`;
+      const x = bases.get(clave) ?? { pagador: g.pagador, canal, tasa, base: D(0) };
+      x.base = x.base.plus(total);
+      bases.set(clave, x);
     }
   }
 
-  const out = [];
-  for (const [clave, base] of bases) {
-    const [pagador, canal] = clave.split('|');
-    const tasa = comision[canal];
-    out.push({
-      pagador,
-      renglon: renglon({
-        tipo: 'comision',
-        detalle: `Comisión ${pct(tasa)} ${canal} - ventas ${nombrePeriodo(periodoVentas)} (${formatoArs(base)})`,
-        cantidad: 1,
-        moneda: 'ARS',
-        precioUnitario: redondear(base.times(tasa)),
-      }),
-    });
-  }
-  return out;
+  return [...bases.values()].map(({ pagador, canal, tasa, base }) => ({
+    pagador,
+    renglon: renglon({
+      tipo: 'comision',
+      detalle: `Comisión ${pct(tasa)} ${canal} - ventas ${nombrePeriodo(periodoVentas)} (${formatoArs(base)})`,
+      cantidad: 1,
+      moneda: 'ARS',
+      precioUnitario: redondear(base.times(tasa)),
+    }),
+  }));
 }
 
 // Cómo se combinan fee y comisión de un mismo pagador cuando el acuerdo es híbrido.
@@ -293,10 +253,11 @@ function renglonesExtras(cliente, periodo, contexto) {
 /**
  * Liquida un cliente para un mes. Devuelve una liquidación por pagador con el monto a pagar.
  *
- * @param cliente  marca con franquiciados, locales, acuerdos y extras
- * @param opciones { periodo: 'AAAA-MM', mep, ipc: { 'AAAA-MM': 0.021 }, ventas: [filas de la plataforma] }
+ * @param datosCliente marca con sus locales propios y franquiciados, acuerdos y extras (ver clientes.js)
+ * @param opciones     { periodo: 'AAAA-MM', mep, ipc: { 'AAAA-MM': 0.021 }, ventas: [{ cliente_id, grupo, periodo, canal, total_con_iva }] }
  */
-export function liquidarCliente(cliente, { periodo, mep, ipc, ventas }) {
+export function liquidarCliente(datosCliente, { periodo, mep, ipc, ventas }) {
+  const cliente = normalizarCliente(datosCliente);
   const acuerdo = acuerdoVigente(cliente, periodo);
   if (!acuerdo) throw new ErrorLiquidacion(`${cliente.nombre} no tiene un acuerdo vigente en ${nombrePeriodo(periodo)}.`);
 

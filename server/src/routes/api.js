@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { validarRuta } from '../store/documentos.js';
 import { traerCotizaciones, documentosCotizaciones } from '../cotizaciones/fuentes.js';
+import { combinarVentas } from '../engine/ventas.js';
 
 export function crearApi(docs) {
   const api = Router();
@@ -38,24 +39,25 @@ export function crearApi(docs) {
     res.status(204).end();
   });
 
-  // Integración con la plataforma Deenex: una fila (o un array) por local x mes x canal.
-  // Se suma a lo que ya haya en ventas/<periodo>, reemplazando local x canal repetidos.
+  // Integración con la plataforma Deenex: una fila (o un array) por cliente x grupo de locales x mes x canal.
+  // Se suma a lo que ya haya en ventas/<periodo> (ver combinarVentas).
   api.post('/ventas', async (req, res) => {
     const filas = Array.isArray(req.body) ? req.body : [req.body];
     const porPeriodo = new Map();
     for (const f of filas) {
-      if (!f?.local_id || !/^\d{4}-\d{2}$/.test(f.periodo) || !['delivery', 'takeaway'].includes(f.canal) || typeof f.total_con_iva !== 'number') {
-        return res.status(400).json({ error: `Fila inválida: ${JSON.stringify(f)}` });
+      const valida = f?.cliente_id && f?.grupo && /^\d{4}-\d{2}$/.test(f.periodo) && ['delivery', 'takeaway'].includes(f.canal)
+        && typeof f.total_con_iva === 'number' && f.total_con_iva >= 0;
+      if (!valida) {
+        return res.status(400).json({
+          error: `Fila inválida: ${JSON.stringify(f)}. Cada fila lleva cliente_id, grupo (propios, franquiciados, todos o el id del franquiciado), periodo AAAA-MM, canal (delivery o takeaway) y total_con_iva.`,
+        });
       }
       if (!porPeriodo.has(f.periodo)) porPeriodo.set(f.periodo, []);
       porPeriodo.get(f.periodo).push(f);
     }
     for (const [periodo, nuevas] of porPeriodo) {
       const actual = (await docs.get(`ventas/${periodo}`))?.filas ?? [];
-      const clave = (v) => `${v.local_id}|${v.canal}`;
-      const combinadas = new Map(actual.map((v) => [clave(v), v]));
-      for (const v of nuevas) combinadas.set(clave(v), v);
-      await docs.set(`ventas/${periodo}`, { periodo, filas: [...combinadas.values()], actualizado: new Date().toISOString() });
+      await docs.set(`ventas/${periodo}`, { periodo, filas: combinarVentas(actual, nuevas), actualizado: new Date().toISOString() });
     }
     res.json({ cargadas: filas.length });
   });

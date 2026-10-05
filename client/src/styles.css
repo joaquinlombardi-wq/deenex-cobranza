@@ -190,3 +190,13 @@ button:disabled { opacity: .6; cursor: default; }
 .tabla.anual .total-anio { font-weight: 700; }
 .resultado-calc { margin-top: 12px; }
 .resultado-calc p { margin: 0 0 8px; }
+
+/* Alta de cliente: cómo paga y locales */
+.modelos { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.modelo { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--borde); border-radius: 10px; background: var(--panel); cursor: pointer; }
+.modelo input { flex: none; margin: 3px 0 0; accent-color: var(--acento); }
+.modelo span { display: flex; flex-direction: column; gap: 2px; }
+.modelo small { color: var(--suave); font-size: 12px; line-height: 1.35; }
+.modelo.elegido { border-color: var(--acento); background: var(--acento-suave); }
+.check { display: flex; gap: 8px; align-items: center; margin: 14px 0 10px; cursor: pointer; }
+.ayuda.nota { margin: 10px 0 0; }

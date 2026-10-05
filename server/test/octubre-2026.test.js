@@ -49,3 +49,15 @@ test('Total general de octubre coincide con lo emitido ($ 14.472.791,22)', () =>
     .reduce((a, b) => a + b, 0);
   assert.equal(Math.round(total * 100) / 100, 14472791.22);
 });
+
+// Así quedaron guardados en la app los clientes de octubre: un renglón por local.
+const conRenglonPorLocal = (cliente) => ({
+  ...cliente,
+  locales: Array.from({ length: cliente.locales?.propios ?? 0 }, (_, i) => ({ id: `${cliente.id}-${i + 1}`, nombre: `${cliente.nombre} local ${i + 1}`, tipo: 'propio', alta: '2025-01-01' })),
+});
+
+test('Los clientes guardados con un renglón por local dan lo mismo que con cantidades', () => {
+  for (const cliente of [c.laFabrica, c.meetAndEat, c.quem, c.quemCentral, c.konex, c.pannus]) {
+    assert.equal(neto(conRenglonPorLocal(cliente)), neto(cliente), cliente.nombre);
+  }
+});

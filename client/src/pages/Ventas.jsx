@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
 import { acuerdoVigente } from '../../../server/src/engine/liquidar.js';
-import { diasActivos } from '../../../server/src/engine/periodos.js';
+import { gruposDeVentas } from '../../../server/src/engine/clientes.js';
 import { nombrePeriodo, periodoMas, periodoActual, pesos, leerMonto } from '../formato.js';
 
 const CANALES = ['delivery', 'takeaway'];
-const clave = (localId, canal) => `${localId}|${canal}`;
+const clave = (clienteId, grupo, canal) => `${clienteId}|${grupo}|${canal}`;
+const formato = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 });
+const comoTexto = (v) => formato.format(v);
 
-// Ventas del mes por local y canal (con IVA, sin envío). Hasta que los devs conecten la
-// plataforma se cargan acá, a mano o pegando un CSV.
+const nombreGrupo = (g) => ({ propios: 'Locales propios', franquiciados: 'Locales franquiciados', todos: 'Todos los locales' })[g.id] ?? g.nombre;
+
+// Ventas del mes por cliente, grupo de locales y canal (con IVA, sin envío). Hasta que los
+// devs conecten la plataforma se cargan acá a mano.
 export default function Ventas() {
   const [periodo, setPeriodo] = useState(periodoMas(periodoActual(), -1));
   const [clientes, setClientes] = useState(null);
+  const [filas, setFilas] = useState(null); // null mientras carga el mes
   const [valores, setValores] = useState({});
-  const [csv, setCsv] = useState('');
   const [mensaje, setMensaje] = useState(null);
 
   useEffect(() => { api.clientes().then(setClientes); }, []);
@@ -21,113 +25,139 @@ export default function Ventas() {
   useEffect(() => {
     let vigente = true;
     setMensaje(null);
-    api.ventas(periodo).then((filas) => {
-      if (!vigente) return;
-      setValores(Object.fromEntries(filas.map((f) => [clave(f.local_id, f.canal), String(f.total_con_iva).replace('.', ',')])));
-    });
+    setFilas(null);
+    api.ventas(periodo).then((f) => vigente && setFilas(f));
     return () => { vigente = false; };
   }, [periodo]);
 
-  // Locales que cobran comisión en este mes, agrupados por cliente.
-  const grupos = useMemo(() => (clientes ?? []).flatMap((c) => {
-    const comision = acuerdoVigente(c, periodo)?.comision;
-    const canales = CANALES.filter((k) => comision?.[k] != null);
-    if (!canales.length) return [];
-    const locales = c.locales.filter((l) => diasActivos(l, periodo) > 0).map((l) => ({ ...l, idVentas: l.plataformaId ?? l.id }));
-    return locales.length ? [{ cliente: c, canales, locales }] : [];
+  // Clientes que cobran comisión sobre las ventas de este mes, con los grupos que hay que cargar.
+  const tablas = useMemo(() => (clientes ?? []).flatMap((c) => {
+    const acuerdo = acuerdoVigente(c, periodo);
+    if (!CANALES.some((k) => acuerdo?.comision?.[k] != null)) return [];
+    const grupos = gruposDeVentas(c, acuerdo);
+    const canales = CANALES.filter((k) => grupos.some((g) => g.tasas[k] != null));
+    return [{ cliente: c, grupos, canales }];
   }), [clientes, periodo]);
 
-  function pegarCsv() {
-    const nuevos = { ...valores };
-    let leidas = 0;
-    const errores = [];
-    csv.split(/\r?\n/).forEach((linea, i) => {
-      const partes = linea.split(/[;\t,](?=(?:[^"]*"[^"]*")*[^"]*$)/).map((x) => x.trim().replace(/^"|"$/g, ''));
-      if (partes.length < 3 || !partes[0] || /local/i.test(partes[0])) return;
-      const [localId, canal, total] = partes;
-      const monto = leerMonto(total);
-      if (!CANALES.includes(canal.toLowerCase()) || Number.isNaN(monto)) return errores.push(i + 1);
-      nuevos[clave(localId, canal.toLowerCase())] = String(monto).replace('.', ',');
-      leidas += 1;
-    });
+  // Lo guardado, en las casillas. Si propios y franquiciados se cobran juntos pero llegaron por
+  // separado, la casilla muestra la suma.
+  useEffect(() => {
+    if (!filas) return setValores({});
+    const monto = (c, grupo, canal) => filas.find((f) => f.cliente_id === c && f.grupo === grupo && f.canal === canal)?.total_con_iva;
+    const nuevos = {};
+    for (const { cliente, grupos, canales } of tablas) {
+      for (const g of grupos) {
+        for (const k of canales) {
+          let v = monto(cliente.id, g.id, k);
+          if (v == null && g.miembros.length > 1) {
+            const partes = g.miembros.map((m) => monto(cliente.id, m, k));
+            if (partes.every((p) => p != null)) v = partes.reduce((s, p) => s + p, 0);
+          }
+          if (v != null) nuevos[clave(cliente.id, g.id, k)] = comoTexto(v);
+        }
+      }
+    }
     setValores(nuevos);
-    setMensaje({ tipo: errores.length ? 'aviso' : 'ok', texto: `Leí ${leidas} filas.${errores.length ? ` No entendí las líneas ${errores.join(', ')}.` : ''} Revisá y guardá.` });
-  }
+  }, [filas, tablas]);
 
   async function guardar() {
-    const filas = [];
-    for (const [k, v] of Object.entries(valores)) {
-      if (v === '') continue;
-      const monto = leerMonto(v);
-      const [local_id, canal] = k.split('|');
-      if (Number.isNaN(monto)) return setMensaje({ tipo: 'error', texto: `El monto "${v}" no es un número.` });
-      filas.push({ local_id, periodo, canal, total_con_iva: monto });
+    if (!filas) return;
+    const nuevas = [];
+    const reemplaza = new Set();
+    for (const { cliente, grupos, canales } of tablas) {
+      for (const g of grupos) {
+        for (const k of canales) {
+          if (g.tasas[k] == null) continue;
+          // Lo que se ve acá reemplaza lo guardado: para la marca, el total y lo separado por tipo de local.
+          const pisa = g.pagador === 'marca' ? ['todos', 'propios', 'franquiciados'] : [g.id];
+          pisa.forEach((m) => reemplaza.add(clave(cliente.id, m, k)));
+          const v = valores[clave(cliente.id, g.id, k)] ?? '';
+          if (v.trim() === '') continue;
+          const total = leerMonto(v);
+          if (Number.isNaN(total) || total < 0) return setMensaje({ tipo: 'error', texto: `El monto "${v}" de ${cliente.nombre} no es un número.` });
+          nuevas.push({ cliente_id: cliente.id, grupo: g.id, periodo, canal: k, total_con_iva: total });
+        }
+      }
     }
-    await api.guardarVentas(periodo, filas);
-    setMensaje({ tipo: 'ok', texto: `Guardé ${filas.length} montos de ${nombrePeriodo(periodo)}.` });
+    // Se conservan las filas que esta pantalla no muestra (otros clientes o grupos).
+    const otras = filas.filter((f) => !reemplaza.has(clave(f.cliente_id, f.grupo, f.canal)));
+    const todas = [...otras, ...nuevas];
+    try {
+      await api.guardarVentas(periodo, todas);
+    } catch (e) {
+      return setMensaje({ tipo: 'error', texto: `No pude guardar las ventas: ${e.message}` });
+    }
+    setFilas(todas);
+    setMensaje({ tipo: 'ok', texto: `Guardé ${nuevas.length} ${nuevas.length === 1 ? 'monto' : 'montos'} de ${nombrePeriodo(periodo)}.` });
   }
 
-  const totalCanal = (g, canal) => g.locales.reduce((s, l) => s + (leerMonto(valores[clave(l.idVentas, canal)]) || 0), 0);
+  const totalCanal = ({ cliente, grupos }, canal) =>
+    grupos.reduce((s, g) => s + (leerMonto(valores[clave(cliente.id, g.id, canal)]) || 0), 0);
 
   return (
     <section>
       <h1>Ventas</h1>
-      <p className="ayuda">Total vendido por local y canal, con IVA y sin costo de envío. Lo que cargues en {nombrePeriodo(periodo)} se cobra como comisión en {nombrePeriodo(periodoMas(periodo, 1))}.</p>
+      <p className="ayuda">Total vendido en el mes, con IVA y sin costo de envío. Lo que cargues en {nombrePeriodo(periodo)} se cobra como comisión en {nombrePeriodo(periodoMas(periodo, 1))}.</p>
       <div className="panel parametros">
         <label>
           Mes de las ventas
           <input id="ventas-periodo" type="month" value={periodo} onChange={(e) => e.target.value && setPeriodo(e.target.value)} />
         </label>
-        <button className="primario" onClick={guardar}>Guardar ventas</button>
+        <button className="primario" onClick={guardar} disabled={!filas || !tablas.length}>Guardar ventas</button>
       </div>
-      {mensaje && <div className={`alerta ${mensaje.tipo === 'ok' ? 'ok' : mensaje.tipo}`}>{mensaje.texto}</div>}
+      {mensaje && <div className={`alerta ${mensaje.tipo}`}>{mensaje.texto}</div>}
 
-      {clientes && grupos.length === 0 && (
-        <div className="panel vacio">Ningún cliente cobra comisión en {nombrePeriodo(periodo)}. Cuando un acuerdo tenga % de delivery o takeaway, sus locales aparecen acá.</div>
+      {clientes && tablas.length === 0 && (
+        <div className="panel vacio">Ningún cliente cobra comisión sobre las ventas de {nombrePeriodo(periodo)}. Cuando un acuerdo tenga % de delivery o takeaway, aparece acá.</div>
       )}
 
-      {grupos.map((g) => (
-        <div className="panel" key={g.cliente.id}>
-          <h2>{g.cliente.nombre}</h2>
-          <div className="scroll-x">
-            <table className="tabla editable ventas">
-              <thead>
-                <tr><th>Local</th><th>Id en la plataforma</th>{g.canales.map((k) => <th key={k} className="num">{k === 'delivery' ? 'Delivery' : 'Takeaway'}</th>)}</tr>
-              </thead>
-              <tbody>
-                {g.locales.map((l) => (
-                  <tr key={l.id}>
-                    <td>{l.nombre}</td>
-                    <td className="cuit">{l.idVentas}</td>
-                    {g.canales.map((k) => (
-                      <td key={k}>
-                        <input
-                          id={`venta-${l.idVentas}-${k}`}
-                          className="num"
-                          inputMode="decimal"
-                          placeholder="Sin cargar"
-                          value={valores[clave(l.idVentas, k)] ?? ''}
-                          onChange={(e) => setValores({ ...valores, [clave(l.idVentas, k)]: e.target.value })}
-                        />
-                      </td>
-                    ))}
+      {tablas.map((t) => (
+        <div className="panel" key={t.cliente.id}>
+          <h2>{t.cliente.nombre}</h2>
+          {t.grupos.length === 0 ? (
+            <p className="ayuda">No tiene locales cargados. Editá el cliente y poné cuántos tiene para cargar sus ventas.</p>
+          ) : (
+            <div className="scroll-x">
+              <table className="tabla editable ventas">
+                <thead>
+                  <tr>
+                    <th>Locales</th>
+                    {t.canales.map((k) => <th key={k} className="num">{k === 'delivery' ? 'Delivery' : 'Takeaway'}</th>)}
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr><td colSpan={2}>Total</td>{g.canales.map((k) => <td key={k} className="num">{pesos(totalCanal(g, k))}</td>)}</tr>
-              </tfoot>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {t.grupos.map((g) => (
+                    <tr key={g.id}>
+                      <td>{nombreGrupo(g)} <span className="etiqueta">({g.locales})</span></td>
+                      {t.canales.map((k) => (
+                        <td key={k}>
+                          {g.tasas[k] == null ? (
+                            <span className="etiqueta">No cobra</span>
+                          ) : (
+                            <input
+                              id={`venta-${t.cliente.id}-${g.id}-${k}`}
+                              className="num"
+                              inputMode="decimal"
+                              placeholder="Sin cargar"
+                              value={valores[clave(t.cliente.id, g.id, k)] ?? ''}
+                              onChange={(e) => setValores({ ...valores, [clave(t.cliente.id, g.id, k)]: e.target.value })}
+                            />
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+                {t.grupos.length > 1 && (
+                  <tfoot>
+                    <tr><td>Total</td>{t.canales.map((k) => <td key={k} className="num">{pesos(totalCanal(t, k))}</td>)}</tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          )}
         </div>
       ))}
-
-      <details className="panel">
-        <summary>Pegar ventas desde un CSV o Excel</summary>
-        <p className="ayuda">Una fila por local y canal: <code>id_local, canal, total</code>. El canal es <code>delivery</code> o <code>takeaway</code>. Sirve copiar las columnas desde Excel.</p>
-        <textarea id="ventas-csv" rows={6} value={csv} onChange={(e) => setCsv(e.target.value)} placeholder={'quem-palermo, delivery, 1.244.000\nquem-palermo, takeaway, 380.500'} />
-        <button className="secundario" onClick={pegarCsv} disabled={!csv.trim()}>Leer filas</button>
-      </details>
     </section>
   );
 }

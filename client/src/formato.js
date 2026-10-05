@@ -56,14 +56,33 @@ export const slug = (texto) =>
 export function resumenAcuerdo(a) {
   if (!a) return 'Sin acuerdo';
   const partes = [];
-  if (a.feePorLocal?.precio != null) partes.push(`${a.moneda} ${a.feePorLocal.precio} por local`);
-  if (a.comision) {
-    const c = ['delivery', 'takeaway'].filter((k) => a.comision[k] != null).map((k) => `${+(a.comision[k] * 100).toFixed(4)}% ${k}`);
-    if (c.length) partes.push(c.join(' + '));
-  }
+  const tasas = (c) => ['delivery', 'takeaway'].filter((k) => c?.[k] != null).map((k) => `${+(c[k] * 100).toFixed(4)}% ${k}`).join(' + ');
   if (a.feeFijo?.monto != null) partes.push(`${a.moneda} ${numero(a.feeFijo.monto)} fijo`);
+  if (a.feePorLocal?.precio != null) {
+    const { precio, precioFranquiciado } = a.feePorLocal;
+    partes.push(precioFranquiciado != null && precioFranquiciado !== precio
+      ? `${a.moneda} ${precio} por local propio, ${precioFranquiciado} por franquiciado`
+      : `${a.moneda} ${precio} por local`);
+  }
+  if (a.comision && tasas(a.comision)) {
+    partes.push(a.comisionFranquiciado ? `${tasas(a.comision)} propios, ${tasas(a.comisionFranquiciado) || 'sin comisión'} franquiciados` : tasas(a.comision));
+  }
   if (a.ajusteIpc?.activo) partes.push('ajusta por IPC');
   return partes.join(' · ') || 'Solo extras';
+}
+
+// Total de locales franquiciados: los que paga la marca o la suma de los de cada franquiciado.
+export const localesFranquiciados = (c) =>
+  c.quienPaga === 'franquiciados' ? (c.franquiciados ?? []).reduce((s, f) => s + (f.locales ?? 0), 0) : c.locales?.franquiciados ?? 0;
+
+// '12 locales propios · 5 franquiciados'
+export function resumenLocales(c) {
+  const propios = c.locales?.propios ?? 0;
+  const franquiciados = c.tieneFranquiciados ? localesFranquiciados(c) : 0;
+  const partes = [];
+  if (propios) partes.push(`${propios} ${propios === 1 ? 'local propio' : 'locales propios'}`);
+  if (franquiciados) partes.push(`${franquiciados} ${franquiciados === 1 ? 'local franquiciado' : 'locales franquiciados'}`);
+  return partes.join(' · ');
 }
 
 // Lee montos escritos a la argentina ("1.244.000,50") o con punto decimal ("1244000.50").

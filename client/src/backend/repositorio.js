@@ -2,8 +2,8 @@
 // ({ get, set, delete, list }) que puede ser la base del artifact de claude.ai o la API Express.
 //
 // Documentos:
-//   clientes/<id>                       el cliente completo (marca, franquiciados, locales, acuerdos, extras)
-//   ventas/<AAAA-MM>                    { filas: [{ local_id, periodo, canal, total_con_iva }] }
+//   clientes/<id>                       el cliente: marca, cantidad de locales propios y franquiciados, acuerdos, extras
+//   ventas/<AAAA-MM>                    { filas: [{ cliente_id, grupo, periodo, canal, total_con_iva }] }
 //   cierres/<AAAA-MM>                   { periodo, mep, fechaMep, resultados, confirmado }
 //   cargos/<AAAA-MM>~<cliente>~<pagador> lo que debe cada pagador por un mes (sale de un cierre confirmado)
 //   pagos/<id>                          { clienteId, pagadorId, fecha, montoArs, medio, nota }
@@ -12,6 +12,7 @@
 //   cotizaciones/ipc                    { valores: { 'AAAA-MM': 0.021 }, fuente, origen } de INDEC, toda la serie
 //   parametros/ipc                      { valores } cargados a mano
 import { liquidarCliente, ErrorLiquidacion } from '../../../server/src/engine/liquidar.js';
+import { normalizarCliente } from '../../../server/src/engine/clientes.js';
 import { periodoAnterior } from '../../../server/src/engine/periodos.js';
 import { combinarSerie } from '../../../server/src/engine/cotizaciones.js';
 import { vencimientoDe } from '../../../server/src/engine/cuentaCorriente.js';
@@ -20,6 +21,8 @@ import { FUENTE_MEP, FUENTE_IPC } from '../../../server/src/cotizaciones/fuentes
 
 const porNombre = (a, b) => a.nombre.localeCompare(b.nombre);
 const ahora = () => new Date().toISOString();
+// La base guarda JSON: saca los campos sin valor (undefined) antes de guardar.
+const sinVacios = (x) => JSON.parse(JSON.stringify(x));
 
 // Firma de un cierre: cambia si cambia algún monto o pagador. Sirve para saber si hay que
 // volver a pasar el cierre a las cuentas corrientes.
@@ -61,7 +64,7 @@ export function crearRepositorio(store) {
   const datos = (filas) => filas.map((f) => f.data);
 
   async function clientes() {
-    return datos(await store.list('clientes')).sort(porNombre);
+    return datos(await store.list('clientes')).map(normalizarCliente).sort(porNombre);
   }
 
   async function serieIpc() {
@@ -153,11 +156,11 @@ export function crearRepositorio(store) {
       if (await store.get(`clientes/${c.id}`)) {
         throw new Error(`Ya existe un cliente con el id "${c.id}". Cambiale el nombre o editá el existente.`);
       }
-      await store.set(`clientes/${c.id}`, c);
+      await store.set(`clientes/${c.id}`, sinVacios(c));
       return c;
     },
     async actualizarCliente(c) {
-      await store.set(`clientes/${c.id}`, c);
+      await store.set(`clientes/${c.id}`, sinVacios(c));
       return c;
     },
     async simular({ cliente, periodo, mep }) {
