@@ -7,14 +7,16 @@
 //   cierres/<AAAA-MM>                   { periodo, mep, fechaMep, resultados, confirmado }
 //   cargos/<AAAA-MM>~<cliente>~<pagador> lo que debe cada pagador por un mes (sale de un cierre confirmado)
 //   pagos/<id>                          { clienteId, pagadorId, fecha, montoArs, medio, nota }
-//   cotizaciones/mep-<AAAA>             { valores: { 'AAAA-MM-DD': venta } } que trae la actualización automática
+//   cotizaciones/mep-<AAAA>             { valores: { 'AAAA-MM-DD': venta }, fuente, origen } automático o importado
 //   cotizaciones/mep-manual             { valores } cargados a mano
-//   cotizaciones/ipc                    { valores: { 'AAAA-MM': 0.021 } } de INDEC
+//   cotizaciones/ipc                    { valores: { 'AAAA-MM': 0.021 }, fuente, origen } de INDEC, toda la serie
 //   parametros/ipc                      { valores } cargados a mano
 import { liquidarCliente, ErrorLiquidacion } from '../../../server/src/engine/liquidar.js';
 import { periodoAnterior } from '../../../server/src/engine/periodos.js';
 import { combinarSerie } from '../../../server/src/engine/cotizaciones.js';
 import { vencimientoDe } from '../../../server/src/engine/cuentaCorriente.js';
+import { leerSeriePegada } from '../../../server/src/cotizaciones/importar.js';
+import { FUENTE_MEP, FUENTE_IPC } from '../../../server/src/cotizaciones/fuentes.js';
 
 const porNombre = (a, b) => a.nombre.localeCompare(b.nombre);
 const ahora = () => new Date().toISOString();
@@ -64,25 +66,33 @@ export function crearRepositorio(store) {
 
   async function serieIpc() {
     const [auto, manual] = await Promise.all([store.get('cotizaciones/ipc'), store.get('parametros/ipc')]);
-    return { ...combinarSerie(auto?.valores, manual?.valores), actualizado: auto?.actualizado ?? null, fuente: auto?.fuente ?? null };
+    return {
+      ...combinarSerie(auto?.valores, manual?.valores),
+      actualizado: auto?.actualizado ?? null,
+      fuente: auto?.fuente ?? null,
+      origen: auto ? auto.origen ?? 'automatico' : null,
+    };
   }
 
   async function serieMep() {
     const docs = await store.list('cotizaciones');
     const auto = {};
-    let actualizado = null;
-    let fuente = null;
+    let ultimo = null;
     let manual = {};
     for (const { id, data } of docs) {
       if (/^mep-\d{4}$/.test(id)) {
         Object.assign(auto, data.valores);
-        if (!actualizado || (data.actualizado && data.actualizado > actualizado)) actualizado = data.actualizado ?? actualizado;
-        fuente = data.fuente ?? fuente;
+        if (!ultimo || (data.actualizado ?? '') > (ultimo.actualizado ?? '')) ultimo = data;
       } else if (id === 'mep-manual') {
         manual = data.valores ?? {};
       }
     }
-    return { ...combinarSerie(auto, manual), actualizado, fuente };
+    return {
+      ...combinarSerie(auto, manual),
+      actualizado: ultimo?.actualizado ?? null,
+      fuente: ultimo?.fuente ?? null,
+      origen: ultimo ? ultimo.origen ?? 'automatico' : null,
+    };
   }
 
   async function guardarManual(path, clave, valor) {
@@ -166,6 +176,24 @@ export function crearRepositorio(store) {
     async cotizaciones() {
       const [mep, ipc] = await Promise.all([serieMep(), serieIpc()]);
       return { mep, ipc };
+    },
+    // Serie pegada en la pestaña Dólar e IPC: el JSON de ArgentinaDatos o columnas de un Excel.
+    // Pisa, día por día o mes por mes, lo que ya había de la fuente; lo cargado a mano no se toca.
+    async importarSerie(tipo, texto) {
+      const { valores, formato, descartadas } = leerSeriePegada(texto, tipo);
+      const grupos = {};
+      for (const [clave, valor] of Object.entries(valores)) {
+        (grupos[tipo === 'ipc' ? 'ipc' : `mep-${clave.slice(0, 4)}`] ??= {})[clave] = valor;
+      }
+      const actualizado = ahora();
+      await Promise.all(Object.entries(grupos).map(async ([id, nuevos]) => {
+        const path = `cotizaciones/${id}`;
+        const actual = await store.get(path);
+        const fuente = formato === 'json' ? (tipo === 'ipc' ? FUENTE_IPC : FUENTE_MEP) : actual?.fuente ?? 'Pegado de un Excel';
+        await store.set(path, { valores: { ...actual?.valores, ...nuevos }, fuente, origen: 'importado', actualizado });
+      }));
+      const claves = Object.keys(valores).sort();
+      return { cantidad: claves.length, desde: claves[0], hasta: claves.at(-1), descartadas };
     },
     guardarMepManual: (fecha, valor) => guardarManual('cotizaciones/mep-manual', fecha, valor),
     guardarIpcManual: (mes, valor) => guardarManual('parametros/ipc', mes, valor),

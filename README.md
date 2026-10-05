@@ -44,6 +44,9 @@ Con base real: `MONGODB_URI=mongodb://127.0.0.1:27017/deenex-cobranza npm run de
 - Fuentes: dólar bolsa (MEP) venta de [ArgentinaDatos](https://api.argentinadatos.com/v1/cotizaciones/dolares/bolsa) (historial) y [DolarApi](https://dolarapi.com/v1/dolares/bolsa) (el del día); IPC mensual de INDEC vía [ArgentinaDatos](https://api.argentinadatos.com/v1/finanzas/indices/inflacion).
 - `npm run cotizaciones --workspace server -- <carpeta>` baja todo y deja un JSON por documento (`cotizaciones/mep-<AAAA>`, `cotizaciones/ipc`). Con el servidor andando, `POST /api/cotizaciones/actualizar` hace lo mismo y lo guarda en la base.
 - Lo cargado a mano (`cotizaciones/mep-manual`, `parametros/ipc`) completa los días o meses que la fuente no tiene. El cierre guarda el dólar que usó, así que un cambio posterior en la serie no toca lo ya cobrado.
+- Se guarda toda la serie: el IPC mensual desde marzo de 1943 y todo el historial de MEP que tenga la fuente.
+- Mientras no corra la actualización automática, la pestaña Dólar e IPC tiene "Importar historial": se abre la página de la fuente en el navegador, se copia todo y se pega (también acepta dos columnas pegadas de un Excel). Lo lee `server/src/cotizaciones/importar.js`.
+- `actualizarPorIpc(monto, ipc, desde, hasta)` (en el motor) lleva un monto de un mes a otro con el IPC de cada mes del medio; lo usa la calculadora de esa pestaña.
 
 ## Ventas desde la plataforma (para los devs)
 

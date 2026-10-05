@@ -174,3 +174,19 @@ button:disabled { opacity: .6; cursor: default; }
   .parametros > .primario { margin-top: 0; }
   .acciones-fila { white-space: normal; }
 }
+
+/* Dólar e IPC: importador, serie completa y calculadora */
+.dos-columnas { margin-bottom: 16px; }
+.rango { margin: 2px 0 8px; }
+.acciones-serie { display: flex; gap: 18px; flex-wrap: wrap; }
+.importador { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 12px; padding: 12px 14px; border: 1px solid var(--borde); border-radius: 10px; background: var(--panel-2); }
+.importador ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; line-height: 1.45; }
+.importador code { word-break: break-all; }
+.importador textarea { box-sizing: border-box; margin-bottom: 0; font-size: 12px; }
+.importador .cuit { margin: 0; }
+.tabla.anual { font-size: 12px; min-width: 760px; }
+.tabla.anual td, .tabla.anual th { padding: 4px 6px; }
+.tabla.anual td.manual { color: var(--naranja); }
+.tabla.anual .total-anio { font-weight: 700; }
+.resultado-calc { margin-top: 12px; }
+.resultado-calc p { margin: 0 0 8px; }

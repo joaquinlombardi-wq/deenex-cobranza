@@ -7,6 +7,9 @@ export const FUENTES = {
   ipc: 'https://api.argentinadatos.com/v1/finanzas/indices/inflacion',
 };
 
+export const FUENTE_MEP = 'ArgentinaDatos y DolarApi (dólar bolsa, venta)';
+export const FUENTE_IPC = 'INDEC vía ArgentinaDatos';
+
 const FECHA = /^\d{4}-\d{2}-\d{2}$/;
 const positivo = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
 
@@ -65,19 +68,18 @@ export async function traerCotizaciones() {
   return { mep, ipc, actualizado: new Date().toISOString() };
 }
 
-// Arma los documentos tal como los guarda el sistema: un documento de MEP por año y uno de IPC.
-export function documentosCotizaciones({ mep, ipc, actualizado }, desde = '2023-01-01') {
+// Arma los documentos tal como los guarda el sistema: un documento de MEP por año y uno de IPC con
+// toda la serie. `desde` ('AAAA-MM-DD') recorta solo el MEP; sin `desde` va el historial completo.
+export function documentosCotizaciones({ mep, ipc, actualizado }, desde = null) {
   const porAnio = {};
   for (const [fecha, venta] of Object.entries(mep)) {
-    if (fecha < desde) continue;
-    const anio = fecha.slice(0, 4);
-    (porAnio[anio] ??= {})[fecha] = venta;
+    if (desde && fecha < desde) continue;
+    (porAnio[fecha.slice(0, 4)] ??= {})[fecha] = venta;
   }
   const docs = Object.entries(porAnio).map(([anio, valores]) => ({
     path: `cotizaciones/mep-${anio}`,
-    data: { valores, fuente: 'ArgentinaDatos y DolarApi (dólar bolsa, venta)', actualizado },
+    data: { valores, fuente: FUENTE_MEP, origen: 'automatico', actualizado },
   }));
-  const ipcDesde = Object.fromEntries(Object.entries(ipc).filter(([mes]) => mes >= desde.slice(0, 7)));
-  docs.push({ path: 'cotizaciones/ipc', data: { valores: ipcDesde, fuente: 'INDEC vía ArgentinaDatos', actualizado } });
+  docs.push({ path: 'cotizaciones/ipc', data: { valores: ipc, fuente: FUENTE_IPC, origen: 'automatico', actualizado } });
   return docs;
 }
