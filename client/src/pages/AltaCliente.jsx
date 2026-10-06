@@ -311,6 +311,12 @@ export default function AltaCliente({ inicial, onListo }) {
 
             {conLocales && (
               <>
+                {c.cambiosLocales?.length > 0 && (
+                  <p className="alerta aviso">
+                    Estas son las cantidades con las que arrancó. Después cambiaron ({c.cambiosLocales.map((x) => `desde ${nombrePeriodo(x.desde)}`).join(', ')}):
+                    los cambios por mes se ven y se cargan en la cuenta del cliente, en Locales.
+                  </p>
+                )}
                 <h3>{c.tieneFranquiciados ? 'Locales propios' : 'Locales'}</h3>
                 <div className="grilla">
                   <Campo label="Cantidad de locales"><input id="locales-propios" type="number" min="0" step="1" placeholder="0" value={c.locales?.propios ?? ''} onChange={(e) => cambiarLocales('propios', num(e.target.value))} /></Campo>
@@ -424,7 +430,7 @@ export default function AltaCliente({ inicial, onListo }) {
 
         {actual === 'Extras' && (
           <>
-            <p className="ayuda">Cargos que no dependen de los locales: hosting, servidores, desarrollos, reintegros. {paganFranquiciados ? 'Por defecto los paga la marca.' : 'Los paga la marca.'}</p>
+            <p className="ayuda">Cargos que no dependen de los locales: hosting y servidores todos los meses; desarrollos, implementaciones o lanzamientos como trabajos puntuales; reintegros. {paganFranquiciados ? 'Por defecto los paga la marca.' : 'Los paga la marca.'}</p>
             {c.extras.length > 0 && (
               <div className="scroll-x">
                 <table className="tabla editable">
@@ -437,8 +443,15 @@ export default function AltaCliente({ inicial, onListo }) {
                         <td><input value={x.concepto} onChange={(e) => cambiarFila('extras', i, { concepto: e.target.value })} /></td>
                         <td>
                           <select value={x.tipo} onChange={(e) => cambiarFila('extras', i, { tipo: e.target.value })}>
-                            <option value="hosting">Hosting / cloud</option><option value="servidores">Servidores</option>
-                            <option value="desarrollo">Desarrollo a medida</option><option value="reintegro">Reintegro</option>
+                            <optgroup label="Todos los meses (MRR)">
+                              <option value="hosting">Hosting / cloud</option><option value="servidores">Servidores</option>
+                            </optgroup>
+                            <optgroup label="Trabajos puntuales (extra jobs)">
+                              <option value="desarrollo">Desarrollo a medida</option><option value="implementacion">Implementación</option>
+                              <option value="lanzamientoApp">Lanzamiento de app</option><option value="consultoria">Consultoría</option>
+                              <option value="graficas">Gráficas</option>
+                            </optgroup>
+                            <option value="reintegro">Reintegro</option>
                           </select>
                         </td>
                         <td><input type="number" step="any" value={x.monto ?? ''} onChange={(e) => cambiarFila('extras', i, { monto: num(e.target.value) })} /></td>
@@ -525,6 +538,7 @@ function Simulacion({ cliente }) {
             <h2>Total {nombrePeriodo(periodo)}</h2>
             <span className="monto">{pesos(resultado.liquidaciones.reduce((s, l) => s + l.totales.netoArs, 0))}</span>
           </div>
+          {resultado.arranca && <p className="ayuda">Todavía no arrancó: se le cobra desde {nombrePeriodo(resultado.arranca)}. Elegí ese mes para ver el abono.</p>}
           {resultado.liquidaciones.map((l) => <Liquidacion key={l.pagador.id} liquidacion={l} />)}
         </>
       )}

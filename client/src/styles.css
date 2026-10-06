@@ -15,6 +15,8 @@
   --rojo-fondo: #fdeceb;
   --verde: #0b6b3a;
   --verde-fondo: #e6f5ec;
+  --serie-mrr: #2a78d6;
+  --serie-extra: #eb6834;
   --fuente: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --fuente-num: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
   font-family: var(--fuente);
@@ -26,12 +28,14 @@
     --fondo: #111715; --panel: #18201d; --panel-2: #1d2622; --texto: #e6ece9; --suave: #9aa8a3; --borde: #2c3733;
     --acento: #4cc2a6; --acento-texto: #0b1411; --acento-suave: #1d3a33; --naranja: #f2b46b; --naranja-fondo: #3a2a14;
     --rojo: #f59a90; --rojo-fondo: #3d1d1a; --verde: #7fd7a3; --verde-fondo: #173326; color-scheme: dark;
+    --serie-mrr: #3987e5; --serie-extra: #d95926;
   }
 }
 :root[data-theme="dark"] {
   --fondo: #111715; --panel: #18201d; --panel-2: #1d2622; --texto: #e6ece9; --suave: #9aa8a3; --borde: #2c3733;
   --acento: #4cc2a6; --acento-texto: #0b1411; --acento-suave: #1d3a33; --naranja: #f2b46b; --naranja-fondo: #3a2a14;
   --rojo: #f59a90; --rojo-fondo: #3d1d1a; --verde: #7fd7a3; --verde-fondo: #173326; color-scheme: dark;
+  --serie-mrr: #3987e5; --serie-extra: #d95926;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--fondo); color: var(--texto); font-family: var(--fuente); font-size: 14px; }
@@ -200,3 +204,78 @@ button:disabled { opacity: .6; cursor: default; }
 .modelo.elegido { border-color: var(--acento); background: var(--acento-suave); }
 .check { display: flex; gap: 8px; align-items: center; margin: 14px 0 10px; cursor: pointer; }
 .ayuda.nota { margin: 10px 0 0; }
+
+/* Saldos, cierre y cuenta */
+.sin-pasar { display: flex; gap: 12px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.sin-pasar span { flex: 1 1 320px; }
+.botones.generar { margin: 0 0 16px; }
+.botones.sin-margen { margin-top: 0; }
+.ventas-comision h3 { margin: 18px 0 6px; }
+.ventas-comision .ventas td { vertical-align: middle; }
+.venta { display: flex; flex-direction: column; gap: 3px; align-items: flex-end; }
+.venta small { color: var(--suave); font-size: 11px; }
+.arrancan ul { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.panel-form { margin: 0 0 16px; }
+.locales .vigente td { background: var(--acento-suave); }
+.locales input.num { text-align: right; }
+.acciones-fila.izquierda { text-align: left; display: inline-block; }
+
+/* Ventas: análisis de la facturación */
+.filtros { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 4px 0 16px; }
+.segmentado { display: inline-flex; border: 1px solid var(--borde); border-radius: 8px; background: var(--panel); padding: 2px; }
+.segmentado button { border: 0; background: none; padding: 6px 12px; border-radius: 6px; color: var(--suave); }
+.segmentado button.activo { background: var(--acento-suave); color: var(--acento); font-weight: 600; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 0 0 16px; }
+.kpi { background: var(--panel); border: 1px solid var(--borde); border-radius: 12px; padding: 16px 20px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.kpi strong { font-size: 24px; font-weight: 600; overflow-wrap: anywhere; }
+.delta { font-size: 13px; color: var(--suave); }
+.delta.sube { color: var(--verde); }
+.delta.baja { color: var(--rojo); }
+.cabecera-grafico { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.leyenda { display: flex; gap: 16px; font-size: 13px; color: var(--texto); }
+.leyenda span { display: inline-flex; align-items: center; gap: 6px; }
+.muestra { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.muestra.mrr, .clave.mrr { background: var(--serie-mrr); }
+.muestra.extra, .clave.extra { background: var(--serie-extra); }
+.grafico { position: relative; width: 100%; }
+.grafico svg { display: block; overflow: visible; }
+.grafico .grilla { stroke: var(--borde); stroke-width: 1; }
+.grafico .eje { fill: var(--suave); font-size: 12px; font-variant-numeric: tabular-nums; }
+.grafico .mes-eje.elegida { fill: var(--texto); font-weight: 600; }
+.grafico .serie.mrr { fill: var(--serie-mrr); }
+.grafico .serie.extra { fill: var(--serie-extra); }
+.grafico .provisorio .serie { opacity: .5; }
+.grafico .resalte { fill: var(--panel-2); }
+.grafico .blanco { fill: transparent; cursor: pointer; outline: none; }
+.grafico .blanco:focus-visible { stroke: var(--acento); stroke-width: 2; }
+.tooltip-grafico { position: absolute; z-index: 2; pointer-events: none; min-width: 180px; padding: 10px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--borde); box-shadow: 0 6px 20px rgb(0 0 0 / .12); font-size: 13px; }
+.tt-mes { color: var(--suave); margin-bottom: 6px; }
+.tt-fila { display: grid; grid-template-columns: 12px auto 1fr; gap: 8px; align-items: center; padding: 2px 0; }
+.tt-fila strong { font-variant-numeric: tabular-nums; }
+.tt-fila span { color: var(--suave); }
+.tt-fila.total { border-top: 1px solid var(--borde); margin-top: 4px; padding-top: 6px; }
+.clave { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
+.mes-a-mes tr.elegida td, .mes-a-mes tr.elegida:hover td { background: var(--acento-suave); }
+.mes-a-mes td:first-child { white-space: nowrap; }
+.origen-celda { min-width: 150px; }
+.origen-celda > * { display: block; text-align: left; }
+.origen-celda .link + .link { margin-top: 2px; }
+.parametros.compacto.arriba { align-items: flex-start; }
+.sin-corte { white-space: nowrap; }
+.titulo-accion { flex-wrap: wrap; gap: 12px; }
+.titulo-accion > div { flex: 1 1 420px; min-width: 0; }
+.importar textarea { margin: 10px 0; }
+.pasos-importar { margin: 6px 0 4px; padding-left: 20px; line-height: 1.5; color: var(--suave); }
+.vista-previa { margin-top: 14px; }
+.vista-previa p { margin: 0 0 8px; }
+.tabla.facturas select { max-width: 280px; }
+.tabla.facturas td.cuit { max-width: 320px; white-space: normal; }
+@media (max-width: 900px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  .kpis { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .kpi { padding: 12px 14px; }
+  .kpi strong { font-size: 19px; }
+  .segmentado button { padding: 6px 10px; }
+}

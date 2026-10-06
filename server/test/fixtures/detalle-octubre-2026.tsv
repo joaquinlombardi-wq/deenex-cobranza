@@ -1,0 +1,19 @@
+DETALLE POR FACTURA - RENGLONES A CARGAR EN EL SISTEMA															
+Cada fila es un renglón de factura. El CÓDIGO DUX y el PRODUCTO DUX son los del sistema contable.					DÓLAR MEP VENTA		1,549.80								
+									MONTO USD			MONTO ARGENTINO			
+FACTURA	CLIENTE	CÓDIGO DUX	PRODUCTO DUX (sistema contable)	DETALLE EN LA FACTURA	CANT.	MON.	P. UNIT.	IVA %	BRUTO	IVA	NETO	BRUTO	IVA	NETO	OBSERVACIONES
+F-01	LA FÁBRICA (NAGYMAROS)	P0005	SERVICIO DE HOSTING	Infraestructura cloud - Octubre 2026	1	USD	75.00	21%	USD 75.00	USD 15.75	USD 90.75	$ 116,235.00	$ 24,409.35	$ 140,644.35	
+F-01	LA FÁBRICA (NAGYMAROS)	P006	SUSCRIPCION - FULL PLAN (VENTAS & FIDELIZACION & MARKETING)	Plan full - 86 locales x USD 60 - Octubre 2026	86	USD	60.00	21%	USD 5,160.00	USD 1,083.60	USD 6,243.60	$ 7,996,968.00	$ 1,679,363.28	$ 9,676,331.28	
+F-01	LA FÁBRICA (NAGYMAROS)	2	REINTEGROS A CLIENTES	Devoluciones de pedidos pendientes	1	ARS	6,900.00	0%	USD 4.45	USD 0.00	USD 4.45	$ 6,900.00	$ 0.00	$ 6,900.00	Devolución de pedidos pendientes: se traslada sin IVA (solo neto).
+F-02	MEET & EAT	P004	SERVICIO DE SERVIDORES DEDICADOS	Servidores cloud - Octubre 2026	1	USD	150.00	21%	USD 150.00	USD 31.50	USD 181.50	$ 232,470.00	$ 48,818.70	$ 281,288.70	CONFIRMAR razón social y CUIT. Mismo concepto y producto que el cloud de Palta en septiembre.
+F-03	QUEM S.A.	P006	SUSCRIPCION - FULL PLAN (VENTAS & FIDELIZACION & MARKETING)	Servicio full - 12 locales x USD 45 - Octubre 2026	12	USD	45.00	21%	USD 540.00	USD 113.40	USD 653.40	$ 836,892.00	$ 175,747.32	$ 1,012,639.32	
+F-03	QUEM S.A.	P002	COMISION % - TRANSACCIONES DELIVERY Y TAKE AWAY	Comisión 3% delivery - facturación Septiembre 2026 ($ 1.244.000,00)	1	ARS	37,320.00	21%	USD 24.08	USD 5.06	USD 29.14	$ 37,320.00	$ 7,837.20	$ 45,157.20	3% sobre $ 1.244.000,00 = $ 37.320,00 de base, + IVA.
+F-04	QUEM S.A.	P006	SUSCRIPCION - FULL PLAN (VENTAS & FIDELIZACION & MARKETING)	Fee mensual SaaS - QUEM Central / Distribuidora - Octubre 2026	1	USD	420.00	21%	USD 420.00	USD 88.20	USD 508.20	$ 650,916.00	$ 136,692.36	$ 787,608.36	
+F-05	KONEX	P006	SUSCRIPCION - FULL PLAN (VENTAS & FIDELIZACION & MARKETING)	Plan full - Octubre 2026	1	USD	650.00	21%	USD 650.00	USD 136.50	USD 786.50	$ 1,007,370.00	$ 211,547.70	$ 1,218,917.70	
+F-05	KONEX	8	DESARROLLO A MEDIDA	Cuota desarrollo a medida - anteúltima cuota - Octubre 2026	1	USD	500.00	21%	USD 500.00	USD 105.00	USD 605.00	$ 774,900.00	$ 162,729.00	$ 937,629.00	Anteúltima cuota: en noviembre queda la última.
+F-06	PANNUS	P006	SUSCRIPCION - FULL PLAN (VENTAS & FIDELIZACION & MARKETING)	Servicio full - 3 locales x USD 65 - Octubre 2026	3	USD	65.00	21%	USD 195.00	USD 40.95	USD 235.95	$ 302,211.00	$ 63,464.31	$ 365,675.31	
+TOTAL GENERAL									USD 7,718.53	USD 1,619.96	USD 9,338.49	$ 11,962,182.00	$ 2,510,609.22	$ 14,472,791.22	
+															
+AMARILLO = celda editable (cantidad y precio unitario). Las columnas BRUTO / IVA / NETO son fórmulas: no se tocan.															
+Octubre 2026: todo lo informado es + IVA (21%). Lo marcado CONFIRMAR en OBSERVACIONES conviene revisarlo antes de emitir.															
+Para agregar un renglón: copiar una fila entera y cambiar solo FACTURA, CÓDIGO DUX, PRODUCTO DUX, DETALLE, CANT., MON. y P. UNIT.															

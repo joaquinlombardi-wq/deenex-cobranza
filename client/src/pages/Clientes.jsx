@@ -1,23 +1,41 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { estadoDeCuenta } from '../../../server/src/engine/cuentaCorriente.js';
-import { resumenAcuerdo, resumenLocales, pesos, hoyLocal, ESTADOS_CUENTA } from '../formato.js';
-import { usaLocales } from '../../../server/src/engine/clientes.js';
+import { resumenAcuerdo, resumenLocales, pesos, hoyLocal, periodoActual, nombrePeriodo, ESTADOS_CUENTA } from '../formato.js';
+import { usaLocales, localesEn } from '../../../server/src/engine/clientes.js';
 
 const acuerdoActual = (c) => [...(c.acuerdos ?? [])].sort((a, b) => b.vigenciaDesde.localeCompare(a.vigenciaDesde))[0];
+
+// Lo que debe (o tiene a favor) un cliente, dicho con palabras.
+export function saldoTexto(estado) {
+  if (estado.estado === 'sin-movimientos') return '-';
+  const saldo = estado.totales.saldoArs;
+  if (saldo > 0.005) return `Debe ${pesos(saldo)}`;
+  if (saldo < -0.005) return `A favor ${pesos(-saldo)}`;
+  return pesos(0);
+}
+
+// '12 locales propios · cambia en Diciembre 2026'
+function localesHoy(c) {
+  const hoy = periodoActual();
+  const proximo = c.cambiosLocales?.find((x) => x.desde > hoy);
+  return [resumenLocales(localesEn(c, hoy)), proximo && `cambia en ${nombrePeriodo(proximo.desde)}`].filter(Boolean).join(' · ');
+}
 
 export function ChipEstado({ estado }) {
   const e = ESTADOS_CUENTA[estado] ?? ESTADOS_CUENTA['sin-movimientos'];
   return <span className={`estado ${e.clase}`}>{e.texto}</span>;
 }
 
-export default function Clientes({ onNuevo, onEditar, onVerCuenta }) {
+export default function Clientes({ onNuevo, onEditar, onVerCuenta, onIrCierre }) {
   const [clientes, setClientes] = useState(null);
   const [cuentas, setCuentas] = useState({ cargos: [], pagos: [] });
+  const [sinPasar, setSinPasar] = useState([]);
 
   useEffect(() => {
     api.clientes().then(setClientes);
     api.cuentas().then(setCuentas).catch(() => {});
+    api.cierresSinPasar().then(setSinPasar).catch(() => {});
   }, []);
 
   const hoy = hoyLocal();
@@ -42,6 +60,17 @@ export default function Clientes({ onNuevo, onEditar, onVerCuenta }) {
         <h1>Clientes</h1>
         <button className="primario" onClick={onNuevo}>+ Nuevo cliente</button>
       </div>
+
+      {sinPasar.map((c) => (
+        <div className="alerta aviso sin-pasar" key={c.periodo}>
+          <span>
+            <strong>{nombrePeriodo(c.periodo)}</strong>{' '}
+            {c.cambio ? 'cambió desde que lo pasaste a las cuentas corrientes' : 'está generado pero todavía no pasó a las cuentas corrientes'}, así que los saldos no incluyen
+            {c.cambio ? ' los cambios' : <> sus <span className="sin-corte">{pesos(c.totalArs)}</span></>}.
+          </span>
+          <button className="link" onClick={() => onIrCierre(c.periodo)}>Ir al cierre de {nombrePeriodo(c.periodo)}</button>
+        </div>
+      ))}
 
       {clientes?.length > 0 && (
         <div className="resumen">
@@ -77,11 +106,11 @@ export default function Clientes({ onNuevo, onEditar, onVerCuenta }) {
                 <tr key={c.id} className="fila-click" onClick={() => onVerCuenta(c)}>
                   <td>
                     <strong>{c.nombre}</strong>
-                    <div className="cuit">{[resumenLocales(c) || (usaLocales(acuerdoActual(c)) && 'Sin locales cargados'), c.cuit && `CUIT ${c.cuit}`].filter(Boolean).join(' · ')}</div>
+                    <div className="cuit">{[localesHoy(c) || (usaLocales(acuerdoActual(c)) && 'Sin locales cargados'), c.cuit && `CUIT ${c.cuit}`].filter(Boolean).join(' · ')}</div>
                   </td>
                   <td>{c.quienPaga === 'franquiciados' ? `Cada franquiciado (${c.franquiciados.length})` : 'La marca'}</td>
                   <td>{resumenAcuerdo(acuerdoActual(c))}</td>
-                  <td className="num">{e.totales.saldoArs < 0 ? `A favor ${pesos(-e.totales.saldoArs)}` : pesos(e.totales.saldoArs)}</td>
+                  <td className={`num ${e.totales.vencidoArs > 0 ? 'rojo' : ''}`}>{saldoTexto(e)}</td>
                   <td><ChipEstado estado={e.estado} /></td>
                   <td className="acciones-fila">
                     <button className="link" onClick={(ev) => { ev.stopPropagation(); onVerCuenta(c); }}>Ver cuenta</button>

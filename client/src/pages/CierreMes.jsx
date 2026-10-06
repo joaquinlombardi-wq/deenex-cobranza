@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { firmaCierre } from '../backend/repositorio.js';
 import { mepEnFecha } from '../../../server/src/engine/cotizaciones.js';
@@ -6,9 +6,11 @@ import {
   pesos, numero, nombrePeriodo, periodoMas, periodoActual, leerMonto, hoyLocal, fechaCorta, diaSemana, fechaHora, porcentaje,
 } from '../formato.js';
 import Liquidacion from './Liquidacion.jsx';
+import VentasComision from './VentasComision.jsx';
 
-export default function CierreMes({ onIrVentas, onIrCotizaciones }) {
-  const [periodo, setPeriodo] = useState(periodoMas(periodoActual(), 1));
+export default function CierreMes({ periodoInicial, onIrCotizaciones }) {
+  const [periodo, setPeriodo] = useState(periodoInicial ?? periodoMas(periodoActual(), 1));
+  const ventasRef = useRef(null);
   const [fechaMep, setFechaMep] = useState(hoyLocal());
   const [mep, setMep] = useState('');
   const [mepEditado, setMepEditado] = useState(false);
@@ -76,6 +78,8 @@ export default function CierreMes({ onIrVentas, onIrCotizaciones }) {
       }
       // Un dólar cargado a mano para un día sin cotización queda en el historial.
       if (valorMep && cotizacionDelDia?.fecha !== fechaMep) await api.guardarMepManual(fechaMep, valorMep);
+      const ventas = await ventasRef.current?.guardar();
+      if (ventas?.error) throw new Error(ventas.error);
       setCotizaciones(await api.cotizaciones());
       setCierre(await api.liquidar({ periodo, mep: valorMep, fechaMep }));
     } catch (e) {
@@ -101,6 +105,9 @@ export default function CierreMes({ onIrVentas, onIrCotizaciones }) {
   const pagadores = resultado?.flatMap((r) => r.liquidaciones) ?? [];
   const total = pagadores.reduce((s, l) => s + l.totales.netoArs, 0);
   const avisos = resultado?.reduce((n, r) => n + r.avisos.length + (r.error ? 1 : 0), 0) ?? 0;
+  // Los que todavía no arrancaron y no tienen nada que pagar este mes van en una línea aparte.
+  const sinArrancar = resultado?.filter((r) => r.arranca && !r.liquidaciones.length) ?? [];
+  const paneles = resultado?.filter((r) => !sinArrancar.includes(r)) ?? [];
   const confirmadoAlDia = cierre?.confirmado && resultado && cierre.confirmado.firma === firmaCierre(resultado);
 
   let ayudaMep;
@@ -117,8 +124,8 @@ export default function CierreMes({ onIrVentas, onIrCotizaciones }) {
     <section>
       <h1>Cierre del mes</h1>
       <p className="ayuda">
-        El dólar y el IPC salen solos del <button className="link" onClick={onIrCotizaciones}>historial</button>. La comisión sale de las{' '}
-        <button className="link" onClick={onIrVentas}>ventas de {nombrePeriodo(periodoMas(periodo, -1))}</button>.
+        El dólar y el IPC salen solos del <button className="link" onClick={onIrCotizaciones}>historial</button>. Si algún cliente cobra comisión,
+        abajo se cargan sus ventas de {nombrePeriodo(periodoMas(periodo, -1))}.
       </p>
       <div className="panel parametros">
         <label>
@@ -155,6 +162,9 @@ export default function CierreMes({ onIrVentas, onIrCotizaciones }) {
               : ipcEditado ? 'Se guarda en el historial al generar.' : 'Solo hace falta para acuerdos en pesos.'}
           </small>
         </label>
+      </div>
+      <VentasComision ref={ventasRef} periodo={periodoMas(periodo, -1)} />
+      <div className="botones generar">
         <button className="primario" onClick={generar} disabled={!!ocupado}>
           {ocupado === 'generar' ? 'Generando…' : cierre ? 'Volver a generar' : 'Generar liquidaciones'}
         </button>
@@ -192,17 +202,27 @@ export default function CierreMes({ onIrVentas, onIrCotizaciones }) {
           )}
 
           {resultado.length === 0 && <div className="panel vacio">Todavía no hay clientes cargados. Arrancá por la pestaña Clientes.</div>}
-          {resultado.map((r) => (
+          {paneles.map((r) => (
             <div className="panel cliente" key={r.cliente.id}>
               <div className="cabecera-cliente">
                 <h2>{r.cliente.nombre}</h2>
                 <span className="monto">{pesos(r.liquidaciones.reduce((s, l) => s + l.totales.netoArs, 0))}</span>
               </div>
               {r.error && <div className="alerta error">{r.error}</div>}
+              {r.arranca && <p className="ayuda sin-margen">El abono empieza en {nombrePeriodo(r.arranca)}: este mes van solo los extras.</p>}
               {r.avisos.map((a, i) => <div className="alerta aviso" key={i}>{a}</div>)}
+              {!r.error && !r.liquidaciones.length && <p className="ayuda sin-margen">Sin cargos este mes.</p>}
               {r.liquidaciones.map((l) => <Liquidacion key={l.pagador.id} liquidacion={l} />)}
             </div>
           ))}
+          {sinArrancar.length > 0 && (
+            <div className="panel arrancan">
+              <h2>Todavía no arrancaron</h2>
+              <ul>
+                {sinArrancar.map((r) => <li key={r.cliente.id}><strong>{r.cliente.nombre}</strong>: se cobra desde {nombrePeriodo(r.arranca)}.</li>)}
+              </ul>
+            </div>
+          )}
         </>
       )}
     </section>

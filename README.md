@@ -17,11 +17,12 @@ Con base real: `MONGODB_URI=mongodb://127.0.0.1:27017/deenex-cobranza npm run de
 
 ## Estructura
 
-- `server/src/engine/` · motor puro (sin base de datos): `liquidar.js` (`liquidarCliente(cliente, { periodo, mep, ipc, ventas })`), `cuentaCorriente.js` (`estadoDeCuenta({ cargos, pagos, hoy })`) y `cotizaciones.js` (series de MEP e IPC).
+- `server/src/engine/` · motor puro (sin base de datos): `liquidar.js` (`liquidarCliente(cliente, { periodo, mep, ipc, ventas })`), `cuentaCorriente.js` (`estadoDeCuenta({ cargos, pagos, hoy })`), `facturacion.js` (`resumenFacturacion`: MRR y extra jobs mes a mes) y `cotizaciones.js` (series de MEP e IPC).
 - `client/src/backend/repositorio.js` · la lógica de datos, igual para el artifact y para el servidor: recibe un store de documentos (`get`, `set`, `delete`, `list`).
 - `server/src/store/documentos.js` · ese store sobre MongoDB (colección `documentos`) o en memoria (modo demo). `server/src/routes/api.js` lo expone en `/api/docs/:coleccion/:id`.
 - `server/src/cotizaciones/` y `server/scripts/cotizaciones.mjs` · traen el historial de dólar MEP e IPC.
-- `client/` · React: Cierre del mes, Clientes (con estado de cuenta y pagos), Ventas, Dólar e IPC y Alta de cliente.
+- `server/src/facturacion/importarDetalle.js` · lee la hoja DETALLE del Excel de facturación pegada y reconoce a qué cliente es cada factura.
+- `client/` · React: Cierre del mes (con las ventas para la comisión), Clientes (con estado de cuenta, pagos, saldo anterior y cambios de locales), Ventas (análisis de la facturación), Dólar e IPC y Alta de cliente.
 - `server/test/` · tests. `octubre-2026.test.js` reproduce la facturación real emitida ($ 14.472.791,22).
 
 ## Reglas de cálculo
@@ -34,12 +35,15 @@ Con base real: `MONGODB_URI=mongodb://127.0.0.1:27017/deenex-cobranza npm run de
 - Si paga cada franquiciado: una liquidación por franquiciado con sus locales y una a la marca con los propios y los extras.
 - Híbrido: `suma` (por defecto), `mayor` (fee o comisión, lo que sea mayor) o `tope` (comisión con máximo).
 - No hay prorrateo: un local que abre a mitad de mes se cobra como un extra de ese mes.
+- La cantidad de locales puede cambiar con el tiempo: `cambiosLocales` guarda, desde un mes (`desde`), cuántos propios y franquiciados hay (y cuántos tiene cada franquiciado que paga). Rige el último cambio con `desde` ≤ al mes; antes del primero, la cantidad del alta. El fee usa los locales del mes que se cobra; la comisión, los del mes de las ventas (M-1). Ver `localesEn` en `server/src/engine/clientes.js`.
+- Un cliente cuyo primer acuerdo rige más adelante no da error: el cierre lo muestra como "todavía no arrancó" (`arranca: 'AAAA-MM'`) y solo le cobra los extras de ese mes, si tiene.
 
 ## Cuentas corrientes
 
 - Al confirmar un cierre ("Pasar a cuentas corrientes") se guarda un cargo por pagador y mes, que vence el `diaVencimiento` del cliente (10 si no tiene otro).
 - Los pagos se imputan al cargo más viejo primero. Cada cargo queda pagado, con pago parcial, pendiente o vencido; si sobra plata queda saldo a favor.
-- Si se vuelve a generar un cierre ya confirmado y cambió algún monto, las cuentas no cambian hasta tocar "Actualizar cuentas".
+- Si se vuelve a generar un cierre ya confirmado y cambió algún monto, las cuentas no cambian hasta tocar "Actualizar cuentas". Un cierre generado y sin pasar no cuenta en los saldos: Clientes avisa cuáles faltan.
+- Saldo anterior: lo que un pagador ya debía antes de usar el sistema se carga a mano desde su cuenta ("Cargar saldo anterior"). Es un cargo más (`tipo: 'saldoAnterior'`, vence en la fecha que se le pone), así que los pagos lo cancelan primero. Pasar o actualizar un cierre nunca lo borra y no cuenta como facturación del mes.
 
 ## Dólar MEP e IPC
 
@@ -50,7 +54,21 @@ Con base real: `MONGODB_URI=mongodb://127.0.0.1:27017/deenex-cobranza npm run de
 - Mientras no corra la actualización automática, la pestaña Dólar e IPC tiene "Importar historial": se abre la página de la fuente en el navegador, se copia todo y se pega (también acepta dos columnas pegadas de un Excel). Lo lee `server/src/cotizaciones/importar.js`.
 - `actualizarPorIpc(monto, ipc, desde, hasta)` (en el motor) lleva un monto de un mes a otro con el IPC de cada mes del medio; lo usa la calculadora de esa pestaña.
 
+## Ventas: análisis de la facturación
+
+La pestaña Ventas muestra lo facturado cada mes, sin IVA y en pesos (o en dólares al MEP de cada mes), separado en:
+
+- **MRR**: abonos (fee por local y fee fijo), comisiones e infraestructura (hosting, servidores).
+- **Extra jobs**: desarrollos, implementaciones, lanzamientos de app, consultorías, gráficas y cualquier concepto que no sea de los anteriores.
+- **Reintegros y ajustes**: van en las tablas pero no en el gráfico.
+
+La categoría sale del tipo de renglón del motor o, en lo importado, del código Dux (`categoriaDe` en `server/src/engine/facturacion.js`). Cada mes sale de una sola fuente, en este orden: lo pasado a cuentas corrientes, lo importado del Excel y, si no hay nada de eso, el cierre generado sin pasar (se marca como provisorio).
+
+Los meses de antes del sistema se importan pegando la hoja DETALLE del Excel del contador ("Importar un mes del Excel"). Lee montos en formato argentino o inglés, toma el dólar de la hoja si está (o lo deduce de un renglón en dólares), compara contra el TOTAL de la planilla y sugiere el cliente de cada factura; lo que no tenga cliente en el sistema queda con el nombre del Excel.
+
 ## Ventas desde la plataforma (para los devs)
+
+Hasta que esté conectada la plataforma, las ventas para la comisión se cargan a mano en Cierre del mes, arriba de "Generar liquidaciones". La API no cambió:
 
 `POST /api/ventas` con una fila (o un array) por cliente × grupo de locales × mes × canal, con el total del grupo:
 
@@ -68,11 +86,13 @@ Documentos (los mismos en el artifact y en Mongo):
 
 | Ruta | Contenido |
 | --- | --- |
-| `clientes/<id>` | el cliente: marca, cantidad de locales propios y franquiciados, franquiciados que pagan, acuerdos, extras, `diaVencimiento` |
+| `clientes/<id>` | el cliente: marca, cantidad de locales propios y franquiciados, `cambiosLocales`, franquiciados que pagan, acuerdos, extras, `diaVencimiento` |
 | `ventas/<AAAA-MM>` | `{ filas: [{ cliente_id, grupo, periodo, canal, total_con_iva }] }` |
 | `cierres/<AAAA-MM>` | `{ periodo, mep, fechaMep, generadoEn, resultados, confirmado }` |
 | `cargos/<AAAA-MM>~<cliente>~<pagador>` | lo que debe un pagador por un mes, con sus renglones |
+| `cargos/saldo~<cliente>~<pagador>~<id>` | saldo anterior cargado a mano (`tipo: 'saldoAnterior'`) |
 | `pagos/<fecha>~<id>` | `{ clienteId, pagadorId, fecha, montoArs, medio, nota }` |
+| `facturacion/<AAAA-MM>` | un mes importado del Excel: `{ periodo, mep, renglones }` |
 | `cotizaciones/mep-<AAAA>`, `cotizaciones/ipc` | series automáticas (`{ valores, fuente, actualizado }`) |
 | `cotizaciones/mep-manual`, `parametros/ipc` | lo cargado a mano (`{ valores }`) |
 

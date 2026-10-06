@@ -21,6 +21,7 @@ export default function App() {
     setVista({ pagina, ...extra });
     window.scrollTo?.(0, 0);
   };
+  const irAlCierre = (periodo) => ir('cierre', { periodo });
   const pestana = ['alta', 'cuenta'].includes(vista.pagina) ? 'clientes' : vista.pagina;
 
   useEffect(() => { api.estado().then((e) => setGuardaDatos(e.guardaDatos)); }, []);
@@ -39,14 +40,21 @@ export default function App() {
       </header>
       <main>
         {!guardaDatos && <div className="alerta aviso">Esta vista no puede guardar datos: lo que cargues se pierde al cerrar.</div>}
-        {vista.pagina === 'cierre' && <CierreMes onIrVentas={() => ir('ventas')} onIrCotizaciones={() => ir('cotizaciones')} />}
-        {vista.pagina === 'ventas' && <Ventas />}
+        {vista.pagina === 'cierre' && (
+          <CierreMes key={vista.periodo ?? 'cierre'} periodoInicial={vista.periodo} onIrCotizaciones={() => ir('cotizaciones')} />
+        )}
+        {vista.pagina === 'ventas' && <Ventas onIrCierre={irAlCierre} />}
         {vista.pagina === 'cotizaciones' && <Cotizaciones />}
         {vista.pagina === 'clientes' && (
-          <Clientes onNuevo={() => ir('alta')} onEditar={(c) => ir('alta', { cliente: c })} onVerCuenta={(c) => ir('cuenta', { cliente: c })} />
+          <Clientes
+            onNuevo={() => ir('alta')}
+            onEditar={(c) => ir('alta', { cliente: c })}
+            onVerCuenta={(c) => ir('cuenta', { cliente: c })}
+            onIrCierre={irAlCierre}
+          />
         )}
         {vista.pagina === 'cuenta' && (
-          <EstadoCuenta cliente={vista.cliente} onVolver={() => ir('clientes')} onEditar={() => ir('alta', { cliente: vista.cliente })} />
+          <EstadoCuenta cliente={vista.cliente} onVolver={() => ir('clientes')} onEditar={(c) => ir('alta', { cliente: c })} />
         )}
         {vista.pagina === 'alta' && <AltaCliente inicial={vista.cliente} onListo={() => ir('clientes')} />}
       </main>

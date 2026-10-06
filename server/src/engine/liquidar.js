@@ -1,7 +1,7 @@
 import { D, redondear, IVA_GENERAL } from './dinero.js';
 import { periodoAnterior, compararPeriodos } from './periodos.js';
 import { PRODUCTOS_DUX } from './productosDux.js';
-import { normalizarCliente, gruposDeLocales, gruposDeVentas } from './clientes.js';
+import { normalizarCliente, gruposDeLocales, gruposDeVentas, localesEn } from './clientes.js';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
@@ -25,6 +25,14 @@ export function acuerdoVigente(cliente, periodo) {
   return [...(cliente.acuerdos ?? [])]
     .filter((a) => compararPeriodos(a.vigenciaDesde, periodo) <= 0)
     .sort((a, b) => compararPeriodos(b.vigenciaDesde, a.vigenciaDesde))[0];
+}
+
+// Mes en que empieza a cobrarse un cliente cuyo primer acuerdo arranca después de este mes.
+export function mesDeArranque(cliente, periodo) {
+  return (cliente.acuerdos ?? [])
+    .map((a) => a.vigenciaDesde)
+    .filter((desde) => compararPeriodos(desde, periodo) > 0)
+    .sort(compararPeriodos)[0] ?? null;
 }
 
 // Factor de ajuste por IPC acumulado desde el mes base. Para liquidar el mes M se usa el
@@ -88,7 +96,7 @@ function renglonesFeePorLocal(cliente, acuerdo, periodo, contexto) {
   const fee = acuerdo.feePorLocal;
   if (!fee) return [];
   const juntos = new Map();
-  for (const g of gruposDeLocales(cliente)) {
+  for (const g of gruposDeLocales(localesEn(cliente, periodo))) {
     const base = g.franquicia ? fee.precioFranquiciado ?? fee.precio : fee.precio;
     if (base == null) throw new ErrorLiquidacion(`Falta el precio por local de ${cliente.nombre}.`);
     const precio = ajustarMonto(base, contexto.pasosIpc);
@@ -151,7 +159,8 @@ function ventasDeGrupo(filas, grupo, canal) {
   return partes.every(Boolean) ? partes.reduce((s, p) => s.plus(p.total_con_iva), D(0)) : null;
 }
 
-// Comisión mes vencido: se cobra en M sobre las ventas de M-1 (total con IVA, sin envío).
+// Comisión mes vencido: se cobra en M sobre las ventas de M-1 (total con IVA, sin envío), con el
+// acuerdo y los locales que tenía en M-1.
 // Las ventas llegan por cliente y grupo de locales: { cliente_id, grupo, periodo, canal, total_con_iva }.
 function renglonesComision(cliente, periodo, ventas, avisos) {
   const periodoVentas = periodoAnterior(periodo);
@@ -160,7 +169,7 @@ function renglonesComision(cliente, periodo, ventas, avisos) {
 
   const filas = (ventas ?? []).filter((v) => v.periodo === periodoVentas && v.cliente_id === cliente.id);
   const bases = new Map();
-  for (const g of gruposDeVentas(cliente, acuerdo)) {
+  for (const g of gruposDeVentas(localesEn(cliente, periodoVentas), acuerdo)) {
     for (const canal of CANALES) {
       const tasa = g.tasas[canal];
       if (tasa == null) continue;
@@ -223,15 +232,22 @@ function mesesEntre(desde, hasta) {
   return (a2 - a1) * 12 + (m2 - m1);
 }
 
+// Un extra se cobra entre su Desde y su Hasta; uno en cuotas, solo en los meses de las cuotas.
+function extraDelMes(extra, periodo) {
+  if (extra.desde && compararPeriodos(periodo, extra.desde) < 0) return false;
+  if (extra.hasta && compararPeriodos(periodo, extra.hasta) > 0) return false;
+  if (!extra.cuotas) return true;
+  const n = mesesEntre(extra.cuotas.primera, periodo) + 1;
+  return n >= 1 && n <= extra.cuotas.total;
+}
+
 function renglonesExtras(cliente, periodo, contexto) {
   const out = [];
   for (const extra of cliente.extras ?? []) {
-    if (extra.desde && compararPeriodos(periodo, extra.desde) < 0) continue;
-    if (extra.hasta && compararPeriodos(periodo, extra.hasta) > 0) continue;
+    if (!extraDelMes(extra, periodo)) continue;
     let detalle = `${extra.concepto} - ${nombrePeriodo(periodo)}`;
     if (extra.cuotas) {
       const n = mesesEntre(extra.cuotas.primera, periodo) + 1;
-      if (n < 1 || n > extra.cuotas.total) continue;
       detalle = `${extra.concepto} - cuota ${n} de ${extra.cuotas.total} - ${nombrePeriodo(periodo)}`;
     }
     out.push({
@@ -252,6 +268,8 @@ function renglonesExtras(cliente, periodo, contexto) {
 
 /**
  * Liquida un cliente para un mes. Devuelve una liquidación por pagador con el monto a pagar.
+ * Si el cliente todavía no arrancó (su primer acuerdo empieza más adelante) solo se cobran los
+ * extras de ese mes, si hay, y el resultado dice en `arranca` desde qué mes se le cobra.
  *
  * @param datosCliente marca con sus locales propios y franquiciados, acuerdos y extras (ver clientes.js)
  * @param opciones     { periodo: 'AAAA-MM', mep, ipc: { 'AAAA-MM': 0.021 }, ventas: [{ cliente_id, grupo, periodo, canal, total_con_iva }] }
@@ -259,17 +277,18 @@ function renglonesExtras(cliente, periodo, contexto) {
 export function liquidarCliente(datosCliente, { periodo, mep, ipc, ventas }) {
   const cliente = normalizarCliente(datosCliente);
   const acuerdo = acuerdoVigente(cliente, periodo);
-  if (!acuerdo) throw new ErrorLiquidacion(`${cliente.nombre} no tiene un acuerdo vigente en ${nombrePeriodo(periodo)}.`);
+  const arranca = acuerdo ? null : mesDeArranque(cliente, periodo);
+  if (!acuerdo && !arranca) throw new ErrorLiquidacion(`${cliente.nombre} no tiene un acuerdo cargado.`);
 
-  const usaUsd = acuerdo.moneda === 'USD' || (cliente.extras ?? []).some((e) => e.moneda === 'USD');
+  const usaUsd = acuerdo?.moneda === 'USD' || cliente.extras.some((e) => e.moneda === 'USD' && extraDelMes(e, periodo));
   if (usaUsd && !(Number(mep) > 0)) throw new ErrorLiquidacion('Falta el dólar MEP venta del día.');
 
   const avisos = [];
-  const contexto = { periodo, mep, pasosIpc: factorIpc(acuerdo, periodo, ipc) };
+  const contexto = { periodo, mep, pasosIpc: acuerdo ? factorIpc(acuerdo, periodo, ipc) : null };
 
   const todos = [
-    ...renglonesFeePorLocal(cliente, acuerdo, periodo, contexto),
-    ...renglonesFeeFijo(acuerdo, periodo, contexto),
+    ...(acuerdo ? renglonesFeePorLocal(cliente, acuerdo, periodo, contexto) : []),
+    ...(acuerdo ? renglonesFeeFijo(acuerdo, periodo, contexto) : []),
     ...renglonesComision(cliente, periodo, ventas, avisos),
     ...renglonesExtras(cliente, periodo, contexto),
   ];
@@ -281,7 +300,7 @@ export function liquidarCliente(datosCliente, { periodo, mep, ipc, ventas }) {
   }
 
   const liquidaciones = [...porPagador].map(([idPagador, renglones]) => {
-    const finales = combinarHibrido(acuerdo, renglones, contexto);
+    const finales = acuerdo ? combinarHibrido(acuerdo, renglones, contexto) : renglones;
     const bruto = sumar(finales, 'brutoArs');
     const iva = sumar(finales, 'ivaArs');
     return {
@@ -296,5 +315,5 @@ export function liquidarCliente(datosCliente, { periodo, mep, ipc, ventas }) {
     a.pagador.tipo === b.pagador.tipo ? a.pagador.nombre.localeCompare(b.pagador.nombre) : a.pagador.tipo === 'marca' ? -1 : 1,
   );
 
-  return { cliente: { id: cliente.id, nombre: cliente.nombre }, periodo, mep, liquidaciones, avisos };
+  return { cliente: { id: cliente.id, nombre: cliente.nombre }, periodo, mep, liquidaciones, avisos, ...(arranca && { arranca }) };
 }

@@ -1,0 +1,21 @@
+DETALLE POR FACTURA - RENGLONES A CARGAR EN EL SISTEMA															
+Cada fila es un renglón de factura. El CÓDIGO DUX y el PRODUCTO DUX son los del sistema contable.															
+									MONTO USD			MONTO ARGENTINO			
+FACTURA	CLIENTE	CÓDIGO DUX	PRODUCTO DUX (sistema contable)	DETALLE EN LA FACTURA	CANT.	MON.	P. UNIT.	IVA %	BRUTO	IVA	NETO	BRUTO	IVA	NETO	OBSERVACIONES
+F-01	LA FÁBRICA	P0005	SERVICIO DE HOSTING	Infraestructura cloud	1	USD	75,00	21%	USD 75,00	USD 15,75	USD 90,75	$ 114.345,00	$ 24.012,45	$ 138.357,45	
+F-01	LA FÁBRICA	P006	SUSCRIPCION - FULL PLAN (VENTAS & FIDELIZACION & MARKETING)	Servicio mensual full - Septiembre 2026	1	USD	4.920,00	21%	USD 4.920,00	USD 1.033,20	USD 5.953,20	$ 7.501.032,00	$ 1.575.216,72	$ 9.076.248,72	
+F-01	LA FÁBRICA	2	REINTEGROS A CLIENTES	Descuento por crédito a favor del cliente	1	ARS	(103.146,00)	21%	(USD 67,65)	(USD 14,21)	(USD 81,86)	($ 103.146,00)	($ 21.660,66)	($ 124.806,66)	CONFIRMAR con la contadora: se descuenta de la BASE y por lo tanto reduce el IVA. Si el crédito fuera un importe final con IVA incluido, hay que cargar -85.244,63 de base.
+F-02	PALTA	P004	SERVICIO DE SERVIDORES DEDICADOS	Servicio cloud	1	USD	150,00	21%	USD 150,00	USD 31,50	USD 181,50	$ 228.690,00	$ 48.024,90	$ 276.714,90	El usuario lo llamó 'cloud' este mes; en agosto se facturó como P004. Confirmar si pasa a P0005.
+F-02	PALTA	P0020	SUSCRIPCION - MODULO EN LOCAL	Costo mes Septiembre 2026 por locales propios - incluye crédito interno de los franquiciados	1	USD	60,00	21%	USD 60,00	USD 12,60	USD 72,60	$ 91.476,00	$ 19.209,96	$ 110.685,96	
+F-03	QUEM S.A.	P006	SUSCRIPCION - FULL PLAN (VENTAS & FIDELIZACION & MARKETING)	Servicio full - Septiembre 2026	1	USD	450,00	21%	USD 450,00	USD 94,50	USD 544,50	$ 686.070,00	$ 144.074,70	$ 830.144,70	
+F-03	QUEM S.A.	P002	COMISION % - TRANSACCIONES DELIVERY Y TAKE AWAY	Delivery - Septiembre 2026	1	ARS	70.407,00	21%	USD 46,18	USD 9,70	USD 55,88	$ 70.407,00	$ 14.785,47	$ 85.192,47	CONFIRMAR dos cosas: (a) si el producto Dux correcto es P002 (comisión) o el 4 (COBRO DE DELIVERY DE CONSUMIDORES); (b) si los $ 70.407 son base o ya tienen IVA incluido.
+F-04	QUEM S.A.	P006	SUSCRIPCION - FULL PLAN (VENTAS & FIDELIZACION & MARKETING)	Fee mensual SaaS - QUEM Central / Distribuidora	1	USD	420,00	21%	USD 420,00	USD 88,20	USD 508,20	$ 640.332,00	$ 134.469,72	$ 774.801,72	
+F-05	KONEX	P006	SUSCRIPCION - FULL PLAN (VENTAS & FIDELIZACION & MARKETING)	Servicio full - Septiembre 2026	1	USD	650,00	21%	USD 650,00	USD 136,50	USD 786,50	$ 990.990,00	$ 208.107,90	$ 1.199.097,90	
+F-05	KONEX	8	DESARROLLO A MEDIDA	Cuota desarrollo a medida - Septiembre 2026	1	USD	500,00	21%	USD 500,00	USD 105,00	USD 605,00	$ 762.300,00	$ 160.083,00	$ 922.383,00	Confirmar número de cuota y cuántas quedan, para dejarlo asentado en la factura.
+F-06	PANNUS	P006	SUSCRIPCION - FULL PLAN (VENTAS & FIDELIZACION & MARKETING)	Servicio full - Septiembre 2026	1	USD	130,00	21%	USD 130,00	USD 27,30	USD 157,30	$ 198.198,00	$ 41.621,58	$ 239.819,58	
+F-07	CAFEJU S.R.L.	P006	SUSCRIPCION - FULL PLAN (VENTAS & FIDELIZACION & MARKETING)	SaaS fee MONTI - Septiembre 2026	1	USD	50,00	21%	USD 50,00	USD 10,50	USD 60,50	$ 76.230,00	$ 16.008,30	$ 92.238,30	YA COBRADO por Mercado Pago. Considerar la comisión de MP como gasto aparte: no reduce el importe a facturar.
+TOTAL GENERAL									USD 7.383,53	USD 1.550,54	USD 8.934,07	$ 11.256.924,00	$ 2.363.954,04	$ 13.620.878,04	
+															
+AMARILLO = celda editable (cantidad y precio unitario). Las columnas BRUTO / IVA / NETO son fórmulas: no se tocan.															
+La fila en ROJO es el descuento de LA FÁBRICA: se carga con precio unitario NEGATIVO y el sistema lo resta solo.															
+Para agregar un renglón: copiar una fila entera y cambiar solo FACTURA, CÓDIGO DUX, PRODUCTO DUX, DETALLE, CANT., MON. y P. UNIT. Ejemplo de fila válida: F-06 | PANNUS | P006 | SUSCRIPCION - FULL PLAN | Servicio full - Septiembre 2026 | 1 | USD | 130,00															

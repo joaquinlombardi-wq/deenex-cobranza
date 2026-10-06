@@ -1,10 +1,18 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { estadoDeCuenta } from '../../../server/src/engine/cuentaCorriente.js';
-import { pesos, numero, nombrePeriodo, hoyLocal, fechaCorta, leerMonto, ESTADOS_CUENTA } from '../formato.js';
-import { ChipEstado } from './Clientes.jsx';
+import { localesEn, usaLocales } from '../../../server/src/engine/clientes.js';
+import {
+  pesos, numero, nombrePeriodo, hoyLocal, fechaCorta, fechaHora, leerMonto, periodoActual, periodoMas, resumenLocales, ESTADOS_CUENTA,
+} from '../formato.js';
+import { ChipEstado, saldoTexto } from './Clientes.jsx';
 
 const MEDIOS = ['Transferencia', 'Mercado Pago', 'Efectivo', 'Cheque', 'Otro'];
+
+const esSaldoAnterior = (c) => c.tipo === 'saldoAnterior';
+const claveCargo = (c) => c.id ?? c.periodo;
+// Nombre del cargo: el mes que se cobró o, si es un saldo de antes, su concepto.
+const nombreCargo = (c) => (esSaldoAnterior(c) ? c.concepto : nombrePeriodo(c.periodo));
 
 // Texto para mandarle al cliente (o al franquiciado) por mail o WhatsApp.
 function resumenTexto(cliente, pagador, hoy) {
@@ -18,7 +26,7 @@ function resumenTexto(cliente, pagador, hoy) {
     const detalle = c.estado === 'pagado'
       ? `pagado${c.pagadoEl ? ` el ${fechaCorta(c.pagadoEl)}` : ''}`
       : `${estado.toLowerCase()} · vence ${fechaCorta(c.vencimiento)}${c.pagadoArs > 0 ? ` · pagado ${pesos(c.pagadoArs)}, resta ${pesos(c.saldoArs)}` : ''}`;
-    lineas.push(`${nombrePeriodo(c.periodo)}: ${pesos(c.montoArs)} · ${detalle}`);
+    lineas.push(`${nombreCargo(c)}: ${pesos(c.montoArs)} · ${detalle}`);
   }
   lineas.push('');
   const saldo = pagador.totales.saldoArs;
@@ -80,6 +88,12 @@ function CuentaPagador({ cliente, pagador, hoy, mostrarTitulo, onCambio }) {
     onCambio();
   }
 
+  async function borrarSaldo(id) {
+    await api.borrarSaldoAnterior(id);
+    setAbierto(null);
+    onCambio();
+  }
+
   async function copiar() {
     const texto = resumenTexto(cliente, pagador, hoy);
     try {
@@ -99,9 +113,7 @@ function CuentaPagador({ cliente, pagador, hoy, mostrarTitulo, onCambio }) {
           <h2>{pagador.pagadorNombre}</h2>
           <ChipEstado estado={pagador.estado} />
         </div>
-        <span className="monto">
-          {totales.saldoArs < 0 ? `A favor ${pesos(-totales.saldoArs)}` : `Saldo ${pesos(totales.saldoArs)}`}
-        </span>
+        <span className={`monto ${totales.vencidoArs > 0 ? 'rojo' : ''}`}>{saldoTexto(pagador)}</span>
       </div>
 
       {pagador.cargos.length > 0 && (
@@ -112,7 +124,13 @@ function CuentaPagador({ cliente, pagador, hoy, mostrarTitulo, onCambio }) {
             </thead>
             <tbody>
               {[...pagador.cargos].reverse().map((c) => (
-                <FilaCargo key={c.periodo} cargo={c} abierto={abierto === c.periodo} onClick={() => setAbierto(abierto === c.periodo ? null : c.periodo)} />
+                <FilaCargo
+                  key={claveCargo(c)}
+                  cargo={c}
+                  abierto={abierto === claveCargo(c)}
+                  onClick={() => setAbierto(abierto === claveCargo(c) ? null : claveCargo(c))}
+                  onBorrar={() => borrarSaldo(c.id)}
+                />
               ))}
             </tbody>
           </table>
@@ -168,11 +186,12 @@ function CuentaPagador({ cliente, pagador, hoy, mostrarTitulo, onCambio }) {
   );
 }
 
-function FilaCargo({ cargo: c, abierto, onClick }) {
+function FilaCargo({ cargo: c, abierto, onClick, onBorrar }) {
+  const [confirmando, setConfirmando] = useState(false);
   return (
     <>
       <tr className="fila-click" onClick={onClick}>
-        <td><span className="flecha">{abierto ? '▾' : '▸'}</span> {nombrePeriodo(c.periodo)}</td>
+        <td><span className="flecha">{abierto ? '▾' : '▸'}</span> {nombreCargo(c)}</td>
         <td>{fechaCorta(c.vencimiento)}</td>
         <td className="num">{pesos(c.montoArs)}</td>
         <td className="num">{c.pagadoArs ? pesos(c.pagadoArs) : '-'}</td>
@@ -182,7 +201,23 @@ function FilaCargo({ cargo: c, abierto, onClick }) {
           {c.estado === 'pagado' && c.pagadoEl && <span className="cuit"> el {fechaCorta(c.pagadoEl)}</span>}
         </td>
       </tr>
-      {abierto && (
+      {abierto && esSaldoAnterior(c) && (
+        <tr className="detalle-cargo">
+          <td colSpan={6}>
+            <p className="cuit">Saldo de antes de usar el sistema, cargado a mano el {fechaHora(c.emitidoEn)}.</p>
+            {confirmando ? (
+              <span className="acciones-fila izquierda">
+                <span className="cuit">¿Borrar este saldo?</span>
+                <button className="link peligro" onClick={onBorrar}>Sí, borrar</button>
+                <button className="link" onClick={() => setConfirmando(false)}>No</button>
+              </span>
+            ) : (
+              <button className="link peligro" onClick={() => setConfirmando(true)}>Borrar este saldo</button>
+            )}
+          </td>
+        </tr>
+      )}
+      {abierto && !esSaldoAnterior(c) && (
         <tr className="detalle-cargo">
           <td colSpan={6}>
             <table className="renglones">
@@ -205,14 +240,212 @@ function FilaCargo({ cargo: c, abierto, onClick }) {
   );
 }
 
-export default function EstadoCuenta({ cliente, onVolver, onEditar }) {
+// Lo que el pagador ya debía antes de empezar a usar el sistema (facturas viejas impagas).
+function FormSaldoAnterior({ cliente, onGuardar, onCancelar }) {
+  const pagadores = [
+    { id: 'marca', nombre: cliente.razonSocial || cliente.nombre },
+    ...(cliente.quienPaga === 'franquiciados' ? cliente.franquiciados.map((f) => ({ id: f.id, nombre: f.razonSocial || 'Franquiciado sin nombre' })) : []),
+  ];
+  const [pagadorId, setPagadorId] = useState('marca');
+  const [fecha, setFecha] = useState(hoyLocal());
+  const [monto, setMonto] = useState('');
+  const [concepto, setConcepto] = useState('');
+  const [error, setError] = useState('');
+
+  async function guardar(e) {
+    e.preventDefault();
+    const valor = leerMonto(monto);
+    if (!(valor > 0)) return setError('Poné cuánto debe, por ejemplo 1.004.929,20. Si tiene saldo a favor, registralo como un pago.');
+    if (!fecha) return setError('Elegí cuándo venció.');
+    try {
+      await onGuardar({ pagadorId, fecha, montoArs: Math.round(valor * 100) / 100, concepto });
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  return (
+    <form className="form-pago panel-form" onSubmit={guardar}>
+      <p className="ancho sin-margen"><strong>Saldo anterior</strong> · lo que ya debía antes de usar el sistema. Los pagos lo cancelan primero.</p>
+      {pagadores.length > 1 && (
+        <label>
+          Quién lo debe
+          <select id="saldo-pagador" value={pagadorId} onChange={(e) => setPagadorId(e.target.value)}>
+            {pagadores.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
+        </label>
+      )}
+      <label>Monto que debe ($)<input id="saldo-monto" inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value)} /></label>
+      <label>Venció el<input id="saldo-fecha" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></label>
+      <label className="ancho">Concepto<input id="saldo-concepto" placeholder="Saldo anterior" value={concepto} onChange={(e) => setConcepto(e.target.value)} /></label>
+      <div className="botones">
+        <button type="submit" className="primario">Guardar saldo</button>
+        <button type="button" className="secundario" onClick={onCancelar}>Cancelar</button>
+      </div>
+      {error && <div className="alerta error ancho">{error}</div>}
+    </form>
+  );
+}
+
+const entero = (v) => (/^\d+$/.test(String(v).trim()) ? Number(v) : NaN);
+
+// Cuántos locales tiene y desde cuándo. Un cambio vale desde el mes elegido: ese mes se cobra con
+// la cantidad nueva y los anteriores quedan como estaban.
+function PanelLocales({ cliente, onCambio }) {
+  const [form, setForm] = useState(null);
+  const [borrando, setBorrando] = useState(null);
+  const [error, setError] = useState('');
+  const hoy = periodoActual();
+  const paganEllos = cliente.quienPaga === 'franquiciados';
+  const conFranquiciados = cliente.tieneFranquiciados;
+
+  const franquiciadosDe = (c) => (paganEllos ? c.franquiciados.reduce((s, f) => s + f.locales, 0) : c.locales.franquiciados);
+  const filas = [
+    { desde: null, propios: cliente.locales.propios, franquiciados: franquiciadosDe(cliente) },
+    ...cliente.cambiosLocales.map((x) => {
+      const en = localesEn(cliente, x.desde);
+      return { desde: x.desde, propios: en.locales.propios, franquiciados: franquiciadosDe(en) };
+    }),
+  ];
+  const vigente = filas.filter((f) => !f.desde || f.desde <= hoy).at(-1);
+
+  function abrir() {
+    const desde = periodoMas(hoy, 1);
+    const en = localesEn(cliente, desde);
+    setError('');
+    setForm({
+      desde,
+      propios: String(en.locales.propios),
+      franquiciados: String(en.locales.franquiciados),
+      porFranquiciado: Object.fromEntries(en.franquiciados.map((f) => [f.id, String(f.locales)])),
+    });
+  }
+
+  async function guardar(e) {
+    e.preventDefault();
+    const propios = entero(form.propios);
+    const franquiciados = conFranquiciados && !paganEllos ? entero(form.franquiciados) : 0;
+    const porFranquiciado = paganEllos ? Object.fromEntries(Object.entries(form.porFranquiciado).map(([id, v]) => [id, entero(v)])) : undefined;
+    const cantidades = [propios, franquiciados, ...Object.values(porFranquiciado ?? {})];
+    if (cantidades.some(Number.isNaN)) return setError('Las cantidades tienen que ser números enteros, 0 o más.');
+    if (!form.desde) return setError('Elegí desde qué mes.');
+    try {
+      onCambio(await api.cambiarLocales(cliente.id, { desde: form.desde, propios, franquiciados, ...(porFranquiciado && { porFranquiciado }) }));
+      setForm(null);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function borrar(desde) {
+    onCambio(await api.borrarCambioLocales(cliente.id, desde));
+    setBorrando(null);
+  }
+
+  const campo = (valor, cambiar, id) => (
+    <input id={id} className="num" inputMode="numeric" value={valor} onChange={(e) => cambiar(e.target.value)} />
+  );
+
+  return (
+    <div className="panel locales">
+      <div className="cabecera-cliente">
+        <h2>Locales</h2>
+        <span className="etiqueta">Hoy: {resumenLocales(localesEn(cliente, hoy)) || 'sin locales'}</span>
+      </div>
+      <div className="scroll-x">
+        <table className="tabla movimientos">
+          <thead>
+            <tr>
+              <th>Desde</th>
+              <th className="num">Propios</th>
+              {conFranquiciados && <th className="num">Franquiciados</th>}
+              {conFranquiciados && <th className="num">Total</th>}
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {filas.map((f) => (
+              <tr key={f.desde ?? 'alta'} className={f === vigente ? 'vigente' : ''}>
+                <td>
+                  {f.desde ? nombrePeriodo(f.desde) : 'Al empezar'}
+                  {f === vigente && <span className="etiqueta"> · ahora</span>}
+                  {f.desde > hoy && <span className="etiqueta"> · próximo</span>}
+                </td>
+                <td className="num">{f.propios}</td>
+                {conFranquiciados && <td className="num">{f.franquiciados}</td>}
+                {conFranquiciados && <td className="num">{f.propios + f.franquiciados}</td>}
+                <td className="acciones-fila">
+                  {f.desde && (borrando === f.desde ? (
+                    <>
+                      <span className="cuit">¿Borrar este cambio?</span>
+                      <button className="link peligro" onClick={() => borrar(f.desde)}>Sí, borrar</button>
+                      <button className="link" onClick={() => setBorrando(null)}>No</button>
+                    </>
+                  ) : (
+                    <button className="link peligro" onClick={() => setBorrando(f.desde)}>Borrar</button>
+                  ))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {form ? (
+        <form className="form-pago" onSubmit={guardar}>
+          <label>
+            Desde el mes
+            <input id="locales-desde" type="month" value={form.desde} onChange={(e) => e.target.value && setForm({ ...form, desde: e.target.value })} />
+          </label>
+          <label>Locales propios{campo(form.propios, (v) => setForm({ ...form, propios: v }), 'cambio-propios')}</label>
+          {conFranquiciados && !paganEllos && (
+            <label>Locales franquiciados{campo(form.franquiciados, (v) => setForm({ ...form, franquiciados: v }), 'cambio-franquiciados')}</label>
+          )}
+          {paganEllos && cliente.franquiciados.map((f) => (
+            <label key={f.id}>
+              {f.razonSocial || 'Franquiciado sin nombre'}
+              {campo(form.porFranquiciado[f.id] ?? '0', (v) => setForm({ ...form, porFranquiciado: { ...form.porFranquiciado, [f.id]: v } }), `cambio-${f.id}`)}
+            </label>
+          ))}
+          <p className="ayuda nota ancho">
+            Desde {form.desde ? nombrePeriodo(form.desde) : 'ese mes'} se cobra con estas cantidades y las ventas para la comisión se piden con estos locales.
+            Los meses anteriores no cambian. Un franquiciado nuevo se agrega editando el cliente.
+          </p>
+          <div className="botones">
+            <button type="submit" className="primario">Guardar cambio</button>
+            <button type="button" className="secundario" onClick={() => setForm(null)}>Cancelar</button>
+          </div>
+          {error && <div className="alerta error ancho">{error}</div>}
+        </form>
+      ) : (
+        <div className="botones">
+          <button className="secundario" onClick={abrir}>Cambiar cantidad de locales</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function EstadoCuenta({ cliente: inicial, onVolver, onEditar }) {
+  const [cliente, setCliente] = useState(inicial);
   const [cuenta, setCuenta] = useState(null);
+  const [cargandoSaldo, setCargandoSaldo] = useState(false);
   const hoy = hoyLocal();
-  const cargar = () => api.cuenta(cliente.id).then(setCuenta);
-  useEffect(() => { cargar(); }, [cliente.id]);
+  const cargar = () => api.cuenta(inicial.id).then(setCuenta);
+  useEffect(() => {
+    cargar();
+    api.cliente(inicial.id).then(setCliente).catch(() => {});
+  }, [inicial.id]);
 
   const estado = cuenta ? estadoDeCuenta({ ...cuenta, hoy }) : null;
   const pagadores = estado?.pagadores ?? [];
+  const conLocales = (cliente.acuerdos ?? []).some(usaLocales);
+
+  async function guardarSaldo(saldo) {
+    await api.cargarSaldoAnterior({ ...saldo, clienteId: cliente.id });
+    setCargandoSaldo(false);
+    cargar();
+  }
 
   return (
     <section>
@@ -225,14 +458,17 @@ export default function EstadoCuenta({ cliente, onVolver, onEditar }) {
             {' · '}vence el día {cliente.diaVencimiento ?? 10} de cada mes
           </p>
         </div>
-        <button className="secundario" onClick={onEditar}>Editar cliente</button>
+        <div className="botones sin-margen">
+          <button className="secundario" onClick={() => setCargandoSaldo(true)}>Cargar saldo anterior</button>
+          <button className="secundario" onClick={() => onEditar(cliente)}>Editar cliente</button>
+        </div>
       </div>
 
       {estado && (
         <div className="resumen">
           <div>
             <span className="etiqueta">Saldo</span>
-            <strong>{estado.totales.saldoArs < 0 ? `A favor ${pesos(-estado.totales.saldoArs)}` : pesos(estado.totales.saldoArs)}</strong>
+            <strong>{saldoTexto(estado)}</strong>
           </div>
           <div><span className="etiqueta">Vencido</span><strong className={estado.totales.vencidoArs > 0 ? 'rojo' : ''}>{pesos(estado.totales.vencidoArs)}</strong></div>
           <div>
@@ -242,16 +478,24 @@ export default function EstadoCuenta({ cliente, onVolver, onEditar }) {
         </div>
       )}
 
-      {estado && pagadores.length === 0 && (
+      {cargandoSaldo && <FormSaldoAnterior cliente={cliente} onGuardar={guardarSaldo} onCancelar={() => setCargandoSaldo(false)} />}
+
+      {estado && pagadores.length === 0 && !cargandoSaldo && (
         <div className="panel vacio">
-          <strong>Todavía no hay liquidaciones en la cuenta.</strong>
-          <p>Generá el cierre del mes y tocá "Pasar a cuentas corrientes". Ahí aparece lo que debe cada mes y podés ir marcando los pagos.</p>
+          <strong>Todavía no hay movimientos en la cuenta.</strong>
+          <p>
+            Lo de cada mes entra cuando generás el cierre y tocás "Pasar a cuentas corrientes". Si ya debía algo de antes de usar el sistema,
+            cargalo como saldo anterior y los pagos lo van a cancelar primero.
+          </p>
+          <button className="secundario" onClick={() => setCargandoSaldo(true)}>Cargar saldo anterior</button>
         </div>
       )}
 
       {pagadores.map((p) => (
         <CuentaPagador key={p.pagadorId} cliente={cliente} pagador={p} hoy={hoy} mostrarTitulo={pagadores.length > 1 || p.pagadorTipo !== 'marca'} onCambio={cargar} />
       ))}
+
+      {conLocales && <PanelLocales cliente={cliente} onCambio={setCliente} />}
     </section>
   );
 }
