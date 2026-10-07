@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { liquidarCliente } from '../src/engine/liquidar.js';
-import { normalizarCliente, localesEn } from '../src/engine/clientes.js';
+import { normalizarCliente, localesEn, conLocalesEnMes } from '../src/engine/clientes.js';
 
 const MEP = 1000;
 
@@ -99,4 +99,23 @@ test('Antes de arrancar se cobran los extras de ese mes (por ejemplo, el lanzami
 
 test('Sin ningún acuerdo cargado la liquidación se frena', () => {
   assert.throws(() => liquidarCliente({ ...creciendo(), acuerdos: [] }, { periodo: '2026-11', mep: MEP }), /no tiene un acuerdo cargado/);
+});
+
+test('Los locales cargados en un mes rigen desde ese mes; si no cambian, no queda un cambio de más', () => {
+  const c = normalizarCliente(creciendo());
+  // Enero 2027 pasa a 16: rige enero y febrero; marzo conserva su cambio a 12.
+  const conEnero = normalizarCliente({ ...creciendo(), cambiosLocales: conLocalesEnMes(c, '2027-01', { propios: 16 }) });
+  assert.deepEqual(['2026-12', '2027-01', '2027-02', '2027-03'].map((p) => localesEn(conEnero, p).locales.propios), [14, 16, 16, 12]);
+  // Cargar en febrero lo mismo que ya tenía no agrega nada.
+  assert.deepEqual(conLocalesEnMes(conEnero, '2027-02', { propios: 16 }).map((x) => x.desde), ['2026-12', '2027-01', '2027-03']);
+  // Volver diciembre a los 10 de antes saca ese cambio.
+  assert.deepEqual(conLocalesEnMes(c, '2026-12', { propios: 10 }).map((x) => [x.desde, x.propios]), [['2027-03', 12]]);
+});
+
+test('Con franquiciados que pagan, el cambio del mes guarda cuántos locales tiene cada uno', () => {
+  const c = normalizarCliente(conFranquiciados());
+  const cambios = conLocalesEnMes(c, '2027-02', { propios: 2, porFranquiciado: { f1: 5, f2: 4, f3: 2 } });
+  const febrero = localesEn(normalizarCliente({ ...conFranquiciados(), cambiosLocales: cambios }), '2027-02');
+  assert.deepEqual(febrero.franquiciados.map((f) => [f.id, f.locales]), [['f1', 5], ['f2', 4], ['f3', 2]]);
+  assert.deepEqual(conLocalesEnMes(c, '2027-02', { propios: 2, porFranquiciado: { f1: 5, f2: 3, f3: 2 } }).map((x) => x.desde), ['2026-12']);
 });

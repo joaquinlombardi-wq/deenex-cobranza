@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { estadoDeCuenta } from '../../../server/src/engine/cuentaCorriente.js';
-import { resumenAcuerdo, resumenLocales, pesos, hoyLocal, periodoActual, nombrePeriodo, ESTADOS_CUENTA } from '../formato.js';
+import { resumenAcuerdo, resumenLocales, pesos, hoyLocal, periodoActual, periodoMas, nombrePeriodo, ESTADOS_CUENTA } from '../formato.js';
 import { usaLocales, localesEn } from '../../../server/src/engine/clientes.js';
+import { casillerosDeVentas } from '../../../server/src/engine/ventas.js';
 
 const acuerdoActual = (c) => [...(c.acuerdos ?? [])].sort((a, b) => b.vigenciaDesde.localeCompare(a.vigenciaDesde))[0];
 
@@ -27,13 +28,26 @@ export function ChipEstado({ estado }) {
   return <span className={`estado ${e.clase}`}>{e.texto}</span>;
 }
 
-export default function Clientes({ onNuevo, onEditar, onVerCuenta, onIrCierre }) {
+// Clientes a los que les faltan las ventas que pide el próximo cierre, una vez que ese mes terminó.
+async function faltanVentas(clientes) {
+  const mes = periodoMas(await api.mesACerrar(hoyLocal()), -1);
+  if (mes >= periodoActual()) return null;
+  const filas = await api.ventas(mes);
+  const ids = clientes.filter((c) => casillerosDeVentas(c, mes, filas).some((x) => x.monto == null)).map((c) => c.id);
+  return { mes, ids: new Set(ids) };
+}
+
+export default function Clientes({ onNuevo, onEditar, onVerCuenta, onCargarMes, onIrCierre }) {
   const [clientes, setClientes] = useState(null);
   const [cuentas, setCuentas] = useState({ cargos: [], pagos: [] });
   const [sinPasar, setSinPasar] = useState([]);
+  const [faltan, setFaltan] = useState(null);
 
   useEffect(() => {
-    api.clientes().then(setClientes);
+    api.clientes().then((lista) => {
+      setClientes(lista);
+      faltanVentas(lista).then(setFaltan).catch(() => {});
+    });
     api.cuentas().then(setCuentas).catch(() => {});
     api.cierresSinPasar().then(setSinPasar).catch(() => {});
   }, []);
@@ -107,6 +121,11 @@ export default function Clientes({ onNuevo, onEditar, onVerCuenta, onIrCierre })
                   <td>
                     <strong>{c.nombre}</strong>
                     <div className="cuit">{[localesHoy(c) || (usaLocales(acuerdoActual(c)) && 'Sin locales cargados'), c.cuit && `CUIT ${c.cuit}`].filter(Boolean).join(' · ')}</div>
+                    {faltan?.ids.has(c.id) && (
+                      <button className="estado aviso boton-estado" onClick={(ev) => { ev.stopPropagation(); onCargarMes(c, faltan.mes); }}>
+                        Faltan las ventas de {nombrePeriodo(faltan.mes)}
+                      </button>
+                    )}
                   </td>
                   <td>{c.quienPaga === 'franquiciados' ? `Cada franquiciado (${c.franquiciados.length})` : 'La marca'}</td>
                   <td>{resumenAcuerdo(acuerdoActual(c))}</td>

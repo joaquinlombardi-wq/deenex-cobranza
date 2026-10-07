@@ -100,3 +100,29 @@ test('La facturación mes a mes junta lo importado, lo pasado a cuentas y lo gen
   await repo.borrarFacturacion('2026-09');
   assert.deepEqual((await repo.facturacion()).map((m) => m.periodo), ['2026-10', '2026-11']);
 });
+
+const quem = {
+  id: 'quem',
+  nombre: 'QUEM S.A.',
+  locales: { propios: 12 },
+  acuerdos: [{ vigenciaDesde: '2025-01', moneda: 'USD', feePorLocal: { precio: 45 }, comision: { delivery: 0.03 } }],
+  extras: [],
+};
+
+test('Lo que se carga mes a mes en la cuenta de un cliente lo usa el cierre del mes siguiente', async () => {
+  const { repo } = repositorio();
+  await repo.crearCliente(quem);
+  await repo.guardarVentas('2026-10', [{ cliente_id: 'otro', grupo: 'propios', periodo: '2026-10', canal: 'delivery', total_con_iva: 5 }]);
+  await repo.guardarMesCliente('quem', '2026-10', { locales: { propios: 14 }, valores: { 'propios|delivery': 1500000 } });
+
+  assert.deepEqual((await repo.ventasDeCliente('quem')).map((f) => [f.periodo, f.grupo, f.canal, f.total_con_iva]), [['2026-10', 'propios', 'delivery', 1500000]]);
+  assert.equal((await repo.ventas('2026-10')).length, 2);
+  const [renglonFee, renglonComision] = (await repo.liquidar({ periodo: '2026-11', mep: 1000 })).resultados[0].liquidaciones[0].renglones;
+  // 14 locales desde octubre siguen en noviembre; la comisión es el 3% de lo vendido en octubre.
+  assert.deepEqual([renglonFee.cantidad, renglonComision.brutoArs], [14, 45000]);
+
+  // Volver a los 12 de antes saca el cambio; borrar el monto deja el mes sin cargar.
+  const cliente = await repo.guardarMesCliente('quem', '2026-10', { locales: { propios: 12 }, valores: {} });
+  assert.deepEqual(cliente.cambiosLocales, []);
+  assert.deepEqual(await repo.ventasDeCliente('quem'), []);
+});

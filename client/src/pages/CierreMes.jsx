@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { firmaCierre } from '../backend/repositorio.js';
 import { mepEnFecha } from '../../../server/src/engine/cotizaciones.js';
@@ -6,11 +6,13 @@ import {
   pesos, numero, nombrePeriodo, periodoMas, periodoActual, leerMonto, hoyLocal, fechaCorta, diaSemana, fechaHora, porcentaje,
 } from '../formato.js';
 import Liquidacion from './Liquidacion.jsx';
-import VentasComision from './VentasComision.jsx';
+import BotonExcel from '../BotonExcel.jsx';
 
-export default function CierreMes({ periodoInicial, onIrCotizaciones }) {
-  const [periodo, setPeriodo] = useState(periodoInicial ?? periodoMas(periodoActual(), 1));
-  const ventasRef = useRef(null);
+const faltanVentas = (aviso) => aviso.startsWith('Faltan las ventas');
+
+export default function CierreMes({ periodoInicial, onIrCotizaciones, onCargarMes }) {
+  // Sin un mes elegido, arranca en el que toca cerrar (ver mesACerrar).
+  const [periodo, setPeriodo] = useState(periodoInicial ?? null);
   const [fechaMep, setFechaMep] = useState(hoyLocal());
   const [mep, setMep] = useState('');
   const [mepEditado, setMepEditado] = useState(false);
@@ -20,14 +22,16 @@ export default function CierreMes({ periodoInicial, onIrCotizaciones }) {
   const [cierre, setCierre] = useState(null);
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState('');
-  const mesIpc = periodoMas(periodo, -2);
+  const mesIpc = periodo && periodoMas(periodo, -2);
 
   useEffect(() => {
     api.cotizaciones().then(setCotizaciones).catch(() => setCotizaciones({ mep: { valores: {} }, ipc: { valores: {} } }));
+    if (!periodoInicial) api.mesACerrar(hoyLocal()).then(setPeriodo).catch(() => setPeriodo(periodoMas(periodoActual(), 1)));
   }, []);
 
   // Al cambiar de mes, trae el cierre guardado de ese mes (si hay) con el dólar que usó.
   useEffect(() => {
+    if (!periodo) return undefined;
     let vigente = true;
     setCierre(null);
     setFechaMep(hoyLocal());
@@ -78,8 +82,6 @@ export default function CierreMes({ periodoInicial, onIrCotizaciones }) {
       }
       // Un dólar cargado a mano para un día sin cotización queda en el historial.
       if (valorMep && cotizacionDelDia?.fecha !== fechaMep) await api.guardarMepManual(fechaMep, valorMep);
-      const ventas = await ventasRef.current?.guardar();
-      if (ventas?.error) throw new Error(ventas.error);
       setCotizaciones(await api.cotizaciones());
       setCierre(await api.liquidar({ periodo, mep: valorMep, fechaMep }));
     } catch (e) {
@@ -118,14 +120,24 @@ export default function CierreMes({ periodoInicial, onIrCotizaciones }) {
     ayudaMep = cotizacionDelDia.fecha === fechaMep
       ? `MEP venta del ${diaSemana(fechaMep)} ${fechaCorta(fechaMep)}.`
       : `No hubo cotización ese día: uso la del ${diaSemana(cotizacionDelDia.fecha)} ${fechaCorta(cotizacionDelDia.fecha)}.`;
-  } else ayudaMep = 'No hay cotización guardada para esa fecha. Cargala a mano y queda en el historial.';
+  } else ayudaMep = 'No hay cotización guardada para esa fecha. Cargala a mano y queda en Dólar e IPC.';
 
+  if (!periodo) {
+    return (
+      <section>
+        <h1>Cierre del mes</h1>
+        <p className="ayuda">Buscando el mes que toca cerrar…</p>
+      </section>
+    );
+  }
+
+  const mesVentas = periodoMas(periodo, -1);
   return (
     <section>
       <h1>Cierre del mes</h1>
       <p className="ayuda">
-        El dólar y el IPC salen solos del <button className="link" onClick={onIrCotizaciones}>historial</button>. Si algún cliente cobra comisión,
-        abajo se cargan sus ventas de {nombrePeriodo(periodoMas(periodo, -1))}.
+        El dólar y el IPC salen solos de <button className="link" onClick={onIrCotizaciones}>Dólar e IPC</button>. Las ventas de {nombrePeriodo(mesVentas)} para
+        la comisión se cargan en cada cliente, en Clientes → Locales y ventas.
       </p>
       <div className="panel parametros">
         <label>
@@ -163,7 +175,6 @@ export default function CierreMes({ periodoInicial, onIrCotizaciones }) {
           </small>
         </label>
       </div>
-      <VentasComision ref={ventasRef} periodo={periodoMas(periodo, -1)} />
       <div className="botones generar">
         <button className="primario" onClick={generar} disabled={!!ocupado}>
           {ocupado === 'generar' ? 'Generando…' : cierre ? 'Volver a generar' : 'Generar liquidaciones'}
@@ -184,20 +195,36 @@ export default function CierreMes({ periodoInicial, onIrCotizaciones }) {
           </div>
 
           {pagadores.length > 0 && (
-            <div className={`panel confirmacion ${confirmadoAlDia ? 'hecha' : ''}`}>
-              {confirmadoAlDia ? (
-                <p><strong>Ya está en las cuentas corrientes</strong> desde el {fechaHora(cierre.confirmado.en)}. Los pagos se marcan en Clientes.</p>
-              ) : cierre.confirmado ? (
-                <>
-                  <p><strong>Este cierre cambió</strong> desde que lo pasaste a las cuentas corrientes el {fechaHora(cierre.confirmado.en)}.</p>
-                  <button className="primario" onClick={confirmar} disabled={!!ocupado}>{ocupado === 'confirmar' ? 'Actualizando…' : 'Actualizar cuentas'}</button>
-                </>
-              ) : (
-                <>
-                  <p>Cuando esté bien, pasalo a las cuentas corrientes: queda registrado lo que debe cada uno y vence el día que tenga pactado (el 10 si no tiene otro).</p>
-                  <button className="primario" onClick={confirmar} disabled={!!ocupado}>{ocupado === 'confirmar' ? 'Pasando…' : 'Pasar a cuentas corrientes'}</button>
-                </>
-              )}
+            <div className="acciones-cierre">
+              <div className={`panel confirmacion ${confirmadoAlDia ? 'hecha' : ''}`}>
+                {confirmadoAlDia ? (
+                  <p><strong>Ya está en las cuentas corrientes</strong> desde el {fechaHora(cierre.confirmado.en)}. Los pagos se marcan en Clientes.</p>
+                ) : cierre.confirmado ? (
+                  <>
+                    <p><strong>Este cierre cambió</strong> desde que lo pasaste a las cuentas corrientes el {fechaHora(cierre.confirmado.en)}.</p>
+                    <button className="primario" onClick={confirmar} disabled={!!ocupado}>{ocupado === 'confirmar' ? 'Actualizando…' : 'Actualizar cuentas'}</button>
+                  </>
+                ) : (
+                  <>
+                    <p>Cuando esté bien, pasalo a las cuentas corrientes: queda registrado lo que debe cada uno y vence el día que tenga pactado (el 10 si no tiene otro).</p>
+                    <button className="primario" onClick={confirmar} disabled={!!ocupado}>{ocupado === 'confirmar' ? 'Pasando…' : 'Pasar a cuentas corrientes'}</button>
+                  </>
+                )}
+              </div>
+              <div className="panel contador">
+                <div>
+                  <h2>Excel para el contador</h2>
+                  <p className="ayuda sin-margen">
+                    Qué facturar y a quién: una factura por pagador, con el producto de Dux, el detalle y los montos en dólares y en pesos.
+                  </p>
+                  {avisos > 0 && (
+                    <p className="naranja sin-margen">
+                      {avisos === 1 ? 'Hay 1 cosa para revisar: va' : `Hay ${avisos} cosas para revisar: van`} en Observaciones del Excel.
+                    </p>
+                  )}
+                </div>
+                <BotonExcel cierre={cierre} texto={`Descargar ${nombrePeriodo(periodo)}`} />
+              </div>
             </div>
           )}
 
@@ -211,6 +238,13 @@ export default function CierreMes({ periodoInicial, onIrCotizaciones }) {
               {r.error && <div className="alerta error">{r.error}</div>}
               {r.arranca && <p className="ayuda sin-margen">El abono empieza en {nombrePeriodo(r.arranca)}: este mes van solo los extras.</p>}
               {r.avisos.map((a, i) => <div className="alerta aviso" key={i}>{a}</div>)}
+              {r.avisos.some(faltanVentas) && (
+                <p className="sin-margen cargar-ventas">
+                  <button className="link" onClick={() => onCargarMes(r.cliente, mesVentas, periodo)}>
+                    Cargar las ventas de {nombrePeriodo(mesVentas)} de {r.cliente.nombre} →
+                  </button>
+                </p>
+              )}
               {!r.error && !r.liquidaciones.length && <p className="ayuda sin-margen">Sin cargos este mes.</p>}
               {r.liquidaciones.map((l) => <Liquidacion key={l.pagador.id} liquidacion={l} />)}
             </div>

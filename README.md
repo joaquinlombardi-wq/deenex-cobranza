@@ -22,7 +22,8 @@ Con base real: `MONGODB_URI=mongodb://127.0.0.1:27017/deenex-cobranza npm run de
 - `server/src/store/documentos.js` · ese store sobre MongoDB (colección `documentos`) o en memoria (modo demo). `server/src/routes/api.js` lo expone en `/api/docs/:coleccion/:id`.
 - `server/src/cotizaciones/` y `server/scripts/cotizaciones.mjs` · traen el historial de dólar MEP e IPC.
 - `server/src/facturacion/importarDetalle.js` · lee la hoja DETALLE del Excel de facturación pegada y reconoce a qué cliente es cada factura.
-- `client/` · React: Cierre del mes (con las ventas para la comisión), Clientes (con estado de cuenta, pagos, saldo anterior y cambios de locales), Ventas (análisis de la facturación), Dólar e IPC y Alta de cliente.
+- `server/src/facturacion/planillaContador.js` y `libroContador.js` · arman el Excel para el contador a partir de un cierre. `server/src/engine/productosDux.js` tiene los productos cargados en Dux.
+- `client/` · React con menú lateral que se oculta: Cierre del mes (con el Excel para el contador), Historial (los cierres pasados, por mes o por cliente), Clientes (estado de cuenta, pagos, saldo anterior y Locales y ventas mes a mes), Ventas (análisis de la facturación), Dólar e IPC y Alta de cliente.
 - `server/test/` · tests. `octubre-2026.test.js` reproduce la facturación real emitida ($ 14.472.791,22).
 
 ## Reglas de cálculo
@@ -37,6 +38,25 @@ Con base real: `MONGODB_URI=mongodb://127.0.0.1:27017/deenex-cobranza npm run de
 - No hay prorrateo: un local que abre a mitad de mes se cobra como un extra de ese mes.
 - La cantidad de locales puede cambiar con el tiempo: `cambiosLocales` guarda, desde un mes (`desde`), cuántos propios y franquiciados hay (y cuántos tiene cada franquiciado que paga). Rige el último cambio con `desde` ≤ al mes; antes del primero, la cantidad del alta. El fee usa los locales del mes que se cobra; la comisión, los del mes de las ventas (M-1). Ver `localesEn` en `server/src/engine/clientes.js`.
 - Un cliente cuyo primer acuerdo rige más adelante no da error: el cierre lo muestra como "todavía no arrancó" (`arranca: 'AAAA-MM'`) y solo le cobra los extras de ese mes, si tiene.
+
+## Cierre del mes
+
+- Abre en el mes que toca cobrar (`mesACerrar` en `server/src/engine/periodos.js`): si hay un cierre generado y sin pasar del mes actual o del siguiente, ese; si no, el mes actual hasta el día 10 y el siguiente desde el 11.
+- Las ventas para la comisión no se cargan acá: se cargan en cada cliente, en Clientes → Locales y ventas. Si faltan, el cierre lo avisa con un link que lleva a cargarlas y vuelve al cierre.
+- Historial muestra cada cierre igual que en Cierre del mes, desplegable por mes y por cliente. Los meses de antes del sistema salen de lo importado del Excel.
+
+## Locales y ventas de cada cliente
+
+- La pestaña Locales y ventas de cada cliente tiene un renglón por mes con los locales (propios, franquiciados o de cada franquiciado que paga) y las ventas con IVA y sin envío de los canales que cobran comisión ese mes.
+- Pide solo los canales del acuerdo vigente en ese mes: si cobra solo delivery, solo se carga delivery; si cobra los dos, los dos (`casillerosDeVentas` en `server/src/engine/ventas.js`). Los meses que todavía no empezaron solo piden locales.
+- Cambiar los locales de un mes guarda un cambio en `cambiosLocales` desde ese mes.
+
+## Excel para el contador
+
+- Desde Cierre del mes o desde Historial se baja `Facturacion_<Mes>_<AAAA>.xlsx` con lo que hay que facturar el día 1, con el formato de la planilla de facturación: hoja DETALLE y hoja PRODUCTOS DUX.
+- Una factura por pagador (la marca o cada franquiciado que paga), un renglón por concepto con su código y producto Dux. Dos clientes del sistema son dos facturas aunque compartan CUIT (QUEM y QUEM Central).
+- Las columnas de montos son fórmulas como las del motor (bruto en dólares × MEP de la celda I2, redondeado al centavo; IVA del renglón; neto), así que dan lo mismo que el sistema y se pueden retocar en el Excel.
+- El detalle de cada renglón lo arma el sistema; el contador lo puede cambiar. La columna CUIT sale del cliente (o del franquiciado): si no está cargado, va vacía. Lo que el cierre marca para revisar va en OBSERVACIONES.
 
 ## Cuentas corrientes
 
@@ -68,7 +88,7 @@ Los meses de antes del sistema se importan pegando la hoja DETALLE del Excel del
 
 ## Ventas desde la plataforma (para los devs)
 
-Hasta que esté conectada la plataforma, las ventas para la comisión se cargan a mano en Cierre del mes, arriba de "Generar liquidaciones". La API no cambió:
+Hasta que esté conectada la plataforma, las ventas para la comisión se cargan a mano en cada cliente (Clientes → Locales y ventas) y quedan en los mismos documentos `ventas/<AAAA-MM>`. La API no cambió:
 
 `POST /api/ventas` con una fila (o un array) por cliente × grupo de locales × mes × canal, con el total del grupo:
 
@@ -81,6 +101,8 @@ Hasta que esté conectada la plataforma, las ventas para la comisión se cargan 
 ## Versión publicada en claude.ai
 
 `npm run build:artifact --workspace client` arma `client/dist-artifact/cobranza.html`: el mismo frontend con el motor corriendo en el navegador y los datos en la base del artifact (`client/src/backend/store-artifact.js`). Es la versión que usa Joaco mientras no haya un servidor con MongoDB.
+
+Se publica con las capacidades `db` (la base) y `downloads` (bajar el Excel para el contador; el navegador del artifact no deja bajar archivos de otra forma). ExcelJS se carga recién al bajar el Excel, desde jsdelivr (`client/src/excel.js`).
 
 Documentos (los mismos en el artifact y en Mongo):
 

@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { estadoDeCuenta } from '../../../server/src/engine/cuentaCorriente.js';
-import { localesEn, usaLocales } from '../../../server/src/engine/clientes.js';
-import {
-  pesos, numero, nombrePeriodo, hoyLocal, fechaCorta, fechaHora, leerMonto, periodoActual, periodoMas, resumenLocales, ESTADOS_CUENTA,
-} from '../formato.js';
+import { usaLocales } from '../../../server/src/engine/clientes.js';
+import { pesos, numero, nombrePeriodo, hoyLocal, fechaCorta, fechaHora, leerMonto, ESTADOS_CUENTA } from '../formato.js';
 import { ChipEstado, saldoTexto } from './Clientes.jsx';
+import MesAMes from './MesAMes.jsx';
 
 const MEDIOS = ['Transferencia', 'Mercado Pago', 'Efectivo', 'Cheque', 'Otro'];
 
@@ -287,159 +286,29 @@ function FormSaldoAnterior({ cliente, onGuardar, onCancelar }) {
   );
 }
 
-const entero = (v) => (/^\d+$/.test(String(v).trim()) ? Number(v) : NaN);
+const PESTANAS = [
+  { id: 'cuenta', nombre: 'Cuenta corriente' },
+  { id: 'mes', nombre: 'Locales y ventas' },
+];
 
-// Cuántos locales tiene y desde cuándo. Un cambio vale desde el mes elegido: ese mes se cobra con
-// la cantidad nueva y los anteriores quedan como estaban.
-function PanelLocales({ cliente, onCambio }) {
-  const [form, setForm] = useState(null);
-  const [borrando, setBorrando] = useState(null);
-  const [error, setError] = useState('');
-  const hoy = periodoActual();
-  const paganEllos = cliente.quienPaga === 'franquiciados';
-  const conFranquiciados = cliente.tieneFranquiciados;
-
-  const franquiciadosDe = (c) => (paganEllos ? c.franquiciados.reduce((s, f) => s + f.locales, 0) : c.locales.franquiciados);
-  const filas = [
-    { desde: null, propios: cliente.locales.propios, franquiciados: franquiciadosDe(cliente) },
-    ...cliente.cambiosLocales.map((x) => {
-      const en = localesEn(cliente, x.desde);
-      return { desde: x.desde, propios: en.locales.propios, franquiciados: franquiciadosDe(en) };
-    }),
-  ];
-  const vigente = filas.filter((f) => !f.desde || f.desde <= hoy).at(-1);
-
-  function abrir() {
-    const desde = periodoMas(hoy, 1);
-    const en = localesEn(cliente, desde);
-    setError('');
-    setForm({
-      desde,
-      propios: String(en.locales.propios),
-      franquiciados: String(en.locales.franquiciados),
-      porFranquiciado: Object.fromEntries(en.franquiciados.map((f) => [f.id, String(f.locales)])),
-    });
-  }
-
-  async function guardar(e) {
-    e.preventDefault();
-    const propios = entero(form.propios);
-    const franquiciados = conFranquiciados && !paganEllos ? entero(form.franquiciados) : 0;
-    const porFranquiciado = paganEllos ? Object.fromEntries(Object.entries(form.porFranquiciado).map(([id, v]) => [id, entero(v)])) : undefined;
-    const cantidades = [propios, franquiciados, ...Object.values(porFranquiciado ?? {})];
-    if (cantidades.some(Number.isNaN)) return setError('Las cantidades tienen que ser números enteros, 0 o más.');
-    if (!form.desde) return setError('Elegí desde qué mes.');
-    try {
-      onCambio(await api.cambiarLocales(cliente.id, { desde: form.desde, propios, franquiciados, ...(porFranquiciado && { porFranquiciado }) }));
-      setForm(null);
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function borrar(desde) {
-    onCambio(await api.borrarCambioLocales(cliente.id, desde));
-    setBorrando(null);
-  }
-
-  const campo = (valor, cambiar, id) => (
-    <input id={id} className="num" inputMode="numeric" value={valor} onChange={(e) => cambiar(e.target.value)} />
-  );
-
-  return (
-    <div className="panel locales">
-      <div className="cabecera-cliente">
-        <h2>Locales</h2>
-        <span className="etiqueta">Hoy: {resumenLocales(localesEn(cliente, hoy)) || 'sin locales'}</span>
-      </div>
-      <div className="scroll-x">
-        <table className="tabla movimientos">
-          <thead>
-            <tr>
-              <th>Desde</th>
-              <th className="num">Propios</th>
-              {conFranquiciados && <th className="num">Franquiciados</th>}
-              {conFranquiciados && <th className="num">Total</th>}
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {filas.map((f) => (
-              <tr key={f.desde ?? 'alta'} className={f === vigente ? 'vigente' : ''}>
-                <td>
-                  {f.desde ? nombrePeriodo(f.desde) : 'Al empezar'}
-                  {f === vigente && <span className="etiqueta"> · ahora</span>}
-                  {f.desde > hoy && <span className="etiqueta"> · próximo</span>}
-                </td>
-                <td className="num">{f.propios}</td>
-                {conFranquiciados && <td className="num">{f.franquiciados}</td>}
-                {conFranquiciados && <td className="num">{f.propios + f.franquiciados}</td>}
-                <td className="acciones-fila">
-                  {f.desde && (borrando === f.desde ? (
-                    <>
-                      <span className="cuit">¿Borrar este cambio?</span>
-                      <button className="link peligro" onClick={() => borrar(f.desde)}>Sí, borrar</button>
-                      <button className="link" onClick={() => setBorrando(null)}>No</button>
-                    </>
-                  ) : (
-                    <button className="link peligro" onClick={() => setBorrando(f.desde)}>Borrar</button>
-                  ))}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {form ? (
-        <form className="form-pago" onSubmit={guardar}>
-          <label>
-            Desde el mes
-            <input id="locales-desde" type="month" value={form.desde} onChange={(e) => e.target.value && setForm({ ...form, desde: e.target.value })} />
-          </label>
-          <label>Locales propios{campo(form.propios, (v) => setForm({ ...form, propios: v }), 'cambio-propios')}</label>
-          {conFranquiciados && !paganEllos && (
-            <label>Locales franquiciados{campo(form.franquiciados, (v) => setForm({ ...form, franquiciados: v }), 'cambio-franquiciados')}</label>
-          )}
-          {paganEllos && cliente.franquiciados.map((f) => (
-            <label key={f.id}>
-              {f.razonSocial || 'Franquiciado sin nombre'}
-              {campo(form.porFranquiciado[f.id] ?? '0', (v) => setForm({ ...form, porFranquiciado: { ...form.porFranquiciado, [f.id]: v } }), `cambio-${f.id}`)}
-            </label>
-          ))}
-          <p className="ayuda nota ancho">
-            Desde {form.desde ? nombrePeriodo(form.desde) : 'ese mes'} se cobra con estas cantidades y las ventas para la comisión se piden con estos locales.
-            Los meses anteriores no cambian. Un franquiciado nuevo se agrega editando el cliente.
-          </p>
-          <div className="botones">
-            <button type="submit" className="primario">Guardar cambio</button>
-            <button type="button" className="secundario" onClick={() => setForm(null)}>Cancelar</button>
-          </div>
-          {error && <div className="alerta error ancho">{error}</div>}
-        </form>
-      ) : (
-        <div className="botones">
-          <button className="secundario" onClick={abrir}>Cambiar cantidad de locales</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export default function EstadoCuenta({ cliente: inicial, onVolver, onEditar }) {
+export default function EstadoCuenta({ cliente: inicial, pestanaInicial = 'cuenta', mesInicial, volverAlCierre, onVolver, onEditar }) {
   const [cliente, setCliente] = useState(inicial);
+  const [cargado, setCargado] = useState(false);
+  const [pestana, setPestana] = useState(pestanaInicial);
   const [cuenta, setCuenta] = useState(null);
   const [cargandoSaldo, setCargandoSaldo] = useState(false);
   const hoy = hoyLocal();
   const cargar = () => api.cuenta(inicial.id).then(setCuenta);
   useEffect(() => {
     cargar();
-    api.cliente(inicial.id).then(setCliente).catch(() => {});
+    api.cliente(inicial.id).then((c) => { setCliente(c); setCargado(true); }).catch(() => setCargado(true));
   }, [inicial.id]);
 
   const estado = cuenta ? estadoDeCuenta({ ...cuenta, hoy }) : null;
   const pagadores = estado?.pagadores ?? [];
+  // Locales y ventas se cargan si algún acuerdo cobra por local o comisión.
   const conLocales = (cliente.acuerdos ?? []).some(usaLocales);
+  const vista = cargado && !conLocales ? 'cuenta' : pestana;
 
   async function guardarSaldo(saldo) {
     await api.cargarSaldoAnterior({ ...saldo, clienteId: cliente.id });
@@ -447,9 +316,14 @@ export default function EstadoCuenta({ cliente: inicial, onVolver, onEditar }) {
     cargar();
   }
 
+  function abrirSaldo() {
+    setPestana('cuenta');
+    setCargandoSaldo(true);
+  }
+
   return (
     <section>
-      <button className="link volver" onClick={onVolver}>← Clientes</button>
+      <button className="link volver" onClick={onVolver}>← {volverAlCierre ? `Cierre de ${nombrePeriodo(volverAlCierre)}` : 'Clientes'}</button>
       <div className="titulo-accion">
         <div>
           <h1>{cliente.nombre}</h1>
@@ -459,12 +333,35 @@ export default function EstadoCuenta({ cliente: inicial, onVolver, onEditar }) {
           </p>
         </div>
         <div className="botones sin-margen">
-          <button className="secundario" onClick={() => setCargandoSaldo(true)}>Cargar saldo anterior</button>
-          <button className="secundario" onClick={() => onEditar(cliente)}>Editar cliente</button>
+          <button className="secundario" onClick={abrirSaldo}>Cargar saldo anterior</button>
+          <button className="secundario" onClick={() => onEditar(cliente)} disabled={!cargado}>Editar cliente</button>
         </div>
       </div>
 
-      {estado && (
+      {conLocales && (
+        <div className="pestanas" role="tablist" aria-label="Secciones del cliente">
+          {PESTANAS.map((p) => (
+            <button
+              key={p.id}
+              id={`pestana-${p.id}`}
+              role="tab"
+              aria-selected={vista === p.id}
+              className={vista === p.id ? 'activa' : ''}
+              onClick={() => setPestana(p.id)}
+            >
+              {p.nombre}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {vista === 'mes' && (cargado ? (
+        <MesAMes cliente={cliente} mesInicial={mesInicial} onCambio={setCliente} />
+      ) : (
+        <p className="ayuda">Cargando el cliente…</p>
+      ))}
+
+      {vista === 'cuenta' && estado && (
         <div className="resumen">
           <div>
             <span className="etiqueta">Saldo</span>
@@ -478,9 +375,9 @@ export default function EstadoCuenta({ cliente: inicial, onVolver, onEditar }) {
         </div>
       )}
 
-      {cargandoSaldo && <FormSaldoAnterior cliente={cliente} onGuardar={guardarSaldo} onCancelar={() => setCargandoSaldo(false)} />}
+      {vista === 'cuenta' && cargandoSaldo && <FormSaldoAnterior cliente={cliente} onGuardar={guardarSaldo} onCancelar={() => setCargandoSaldo(false)} />}
 
-      {estado && pagadores.length === 0 && !cargandoSaldo && (
+      {vista === 'cuenta' && estado && pagadores.length === 0 && !cargandoSaldo && (
         <div className="panel vacio">
           <strong>Todavía no hay movimientos en la cuenta.</strong>
           <p>
@@ -491,11 +388,9 @@ export default function EstadoCuenta({ cliente: inicial, onVolver, onEditar }) {
         </div>
       )}
 
-      {pagadores.map((p) => (
+      {vista === 'cuenta' && pagadores.map((p) => (
         <CuentaPagador key={p.pagadorId} cliente={cliente} pagador={p} hoy={hoy} mostrarTitulo={pagadores.length > 1 || p.pagadorTipo !== 'marca'} onCambio={cargar} />
       ))}
-
-      {conLocales && <PanelLocales cliente={cliente} onCambio={setCliente} />}
     </section>
   );
 }

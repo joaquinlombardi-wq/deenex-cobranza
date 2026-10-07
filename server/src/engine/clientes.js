@@ -93,6 +93,20 @@ export function localesEn(cliente, periodo) {
   };
 }
 
+// Los locales de un mes cargados desde su cuenta: rigen desde ese mes hasta el próximo cambio.
+// Si son los mismos que ya traía del mes anterior, el cambio de ese mes sobra y se saca.
+// Devuelve la lista nueva de cambiosLocales. Recibe un cliente ya normalizado.
+export function conLocalesEnMes(cliente, periodo, { propios, franquiciados = 0, porFranquiciado = {} }) {
+  const otros = cliente.cambiosLocales.filter((x) => x.desde !== periodo);
+  const previo = localesEn({ ...cliente, cambiosLocales: otros }, periodo);
+  const nuevo = normalizarCambio({ desde: periodo, propios, franquiciados: cliente.tieneFranquiciados ? franquiciados : 0, porFranquiciado });
+  const igual =
+    nuevo.propios === previo.locales.propios &&
+    nuevo.franquiciados === previo.locales.franquiciados &&
+    previo.franquiciados.every((f) => (nuevo.porFranquiciado[f.id] ?? f.locales) === f.locales);
+  return igual ? otros : normalizarCambios([...otros, nuevo]);
+}
+
 // Grupos de locales que se cobran juntos: los propios, los franquiciados que paga la marca
 // o los de cada franquiciado que paga. `id` es el que usan las ventas (campo `grupo`).
 export function gruposDeLocales(cliente) {

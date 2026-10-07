@@ -2,8 +2,8 @@
 // ({ get, set, delete, list }) que puede ser la base del artifact de claude.ai o la API Express.
 //
 // Documentos:
-//   clientes/<id>                       el cliente: marca, cantidad de locales propios y franquiciados, acuerdos, extras
-//   ventas/<AAAA-MM>                    { filas: [{ cliente_id, grupo, periodo, canal, total_con_iva }] }
+//   clientes/<id>                       el cliente: marca, cantidad de locales propios y franquiciados (y sus cambios por mes), acuerdos, extras
+//   ventas/<AAAA-MM>                    { filas: [{ cliente_id, grupo, periodo, canal, total_con_iva }] } se cargan en la cuenta de cada cliente (o las manda la plataforma)
 //   cierres/<AAAA-MM>                   { periodo, mep, fechaMep, resultados, confirmado }
 //   cargos/<AAAA-MM>~<cliente>~<pagador> lo que debe cada pagador por un mes (sale de un cierre confirmado)
 //   cargos/saldo~<cliente>~<pagador>~<id> { tipo: 'saldoAnterior', ... } lo que ya debía antes de usar el sistema
@@ -13,9 +13,10 @@
 //   cotizaciones/mep-manual             { valores } cargados a mano
 //   cotizaciones/ipc                    { valores: { 'AAAA-MM': 0.021 }, fuente, origen } de INDEC, toda la serie
 //   parametros/ipc                      { valores } cargados a mano
-import { liquidarCliente, ErrorLiquidacion } from '../../../server/src/engine/liquidar.js';
-import { normalizarCliente } from '../../../server/src/engine/clientes.js';
-import { periodoAnterior } from '../../../server/src/engine/periodos.js';
+import { liquidarCliente, ErrorLiquidacion, acuerdoVigente } from '../../../server/src/engine/liquidar.js';
+import { normalizarCliente, conLocalesEnMes, localesEn, gruposDeVentas } from '../../../server/src/engine/clientes.js';
+import { reemplazarVentasCliente } from '../../../server/src/engine/ventas.js';
+import { periodoAnterior, mesACerrar } from '../../../server/src/engine/periodos.js';
 import { combinarSerie } from '../../../server/src/engine/cotizaciones.js';
 import { resumenFacturacion } from '../../../server/src/engine/facturacion.js';
 import { vencimientoDe } from '../../../server/src/engine/cuentaCorriente.js';
@@ -196,6 +197,12 @@ export function crearRepositorio(store) {
     liquidar,
     confirmarCierre,
     cierre: (periodo) => store.get(`cierres/${periodo}`),
+    // El mes que toca cerrar hoy ('AAAA-MM-DD'): ver mesACerrar en periodos.js.
+    async mesACerrar(hoy) {
+      const actual = hoy.slice(0, 7);
+      const cierres = await Promise.all([actual, periodoAnterior(actual, -1)].map((p) => store.get(`cierres/${p}`)));
+      return mesACerrar(hoy, cierres.filter(Boolean));
+    },
     // Cierres generados que no están en las cuentas corrientes (o cambiaron desde que se pasaron).
     async cierresSinPasar() {
       return datos(await store.list('cierres'))
@@ -220,6 +227,38 @@ export function crearRepositorio(store) {
     borrarFacturacion: (periodo) => store.delete(`facturacion/${periodo}`),
     async ventas(periodo) {
       return (await store.get(`ventas/${periodo}`))?.filas ?? [];
+    },
+    // Las ventas de un cliente en todos los meses cargados.
+    async ventasDeCliente(clienteId) {
+      return datos(await store.list('ventas'))
+        .flatMap((d) => (d.filas ?? []).map((f) => ({ ...f, periodo: f.periodo ?? d.periodo })))
+        .filter((f) => f.cliente_id === clienteId);
+    },
+    // Lo que se carga mes a mes en la cuenta de un cliente: cuántos locales tuvo (rige desde ese mes
+    // hasta el próximo cambio) y cuánto vendió en cada canal que cobra comisión.
+    // `valores` es { 'grupo|canal': monto } con los grupos de gruposDeVentas para esos locales.
+    async guardarMesCliente(clienteId, periodo, { locales, valores }) {
+      const guardado = await clienteGuardado(clienteId);
+      let cliente = normalizarCliente(guardado);
+      const cambios = locales && conLocalesEnMes(cliente, periodo, locales);
+      if (cambios && JSON.stringify(cambios) !== JSON.stringify(cliente.cambiosLocales)) {
+        const cambiosLocales = cambios.map((x) => (x.desde === periodo ? { ...x, registradoEn: ahora() } : x));
+        await store.set(`clientes/${clienteId}`, sinVacios({ ...guardado, cambiosLocales }));
+        cliente = normalizarCliente({ ...guardado, cambiosLocales });
+      }
+      if (valores) {
+        const acuerdo = acuerdoVigente(cliente, periodo);
+        const grupos = acuerdo?.comision ? gruposDeVentas(localesEn(cliente, periodo), acuerdo) : [];
+        const actual = (await store.get(`ventas/${periodo}`))?.filas ?? [];
+        const filas = reemplazarVentasCliente(actual, { clienteId, periodo, grupos, valores });
+        if (JSON.stringify(filas) !== JSON.stringify(actual)) await store.set(`ventas/${periodo}`, { periodo, filas, actualizado: ahora() });
+      }
+      return cliente;
+    },
+    // Los cierres guardados y los meses importados del Excel, para el historial.
+    async historial() {
+      const [cierres, importados] = await Promise.all([store.list('cierres'), store.list('facturacion')]);
+      return { cierres: datos(cierres), importados: datos(importados) };
     },
     async guardarVentas(periodo, filas) {
       await store.set(`ventas/${periodo}`, { periodo, filas, actualizado: ahora() });
