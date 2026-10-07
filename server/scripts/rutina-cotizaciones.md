@@ -6,6 +6,11 @@ y la arranca también el botón "Actualizar dólar e IPC" de la app, que le agre
 `pedido: boton`. Tiene que correr en un entorno con acceso a dolarhoy.com, www.indec.gob.ar,
 api.argentinadatos.com y github.com.
 
+Desde un proyecto privado de claude.ai una rutina no puede abrir una sesión nueva cada vez: dispara
+siempre en la sesión que la creó. Por eso la crea y la corre el hilo "Cotizaciones automáticas" del
+proyecto, que usa el entorno "Cloud x proyecto de cobranzas" (con acceso a esas páginas). Cada vez
+que dispara, esa misma conversación sigue con este texto.
+
 Si se cambia este texto, hay que actualizar la rutina con el mismo texto (`update_trigger`).
 
 ---
@@ -14,7 +19,7 @@ Actualizá el dólar MEP y el IPC de la app de cobranza de Deenex, publicada en
 https://claude.ai/artifact/SkfBMqP3pYoFwXE9mt2z6A. No hagas nada más que esto.
 
 1. Usá el repo github.com/joaquinlombardi-wq/deenex-cobranza, rama main. Si no está en el directorio
-   de trabajo, clonalo. No hace falta `npm install`.
+   de trabajo, clonalo; si ya está, traé lo último de main. No hace falta `npm install`.
 2. Bajá cómo está la colección hoy: ArtifactData con action `list`, la url de arriba, collection
    `cotizaciones` y out_dir `/tmp/cotiz/actuales`. Anotá la version de cada documento.
 3. Corré, desde la raíz del repo:
@@ -32,4 +37,6 @@ https://claude.ai/artifact/SkfBMqP3pYoFwXE9mt2z6A. No hagas nada más que esto.
 7. Si en `resultado.errores` alguna fuente dice que no encontró el valor o las columnas (cambió el
    formato de la página), subí `/tmp/cotiz/crudo` a la rama `fuentes-crudas` del repo, en un commit
    aparte, sin tocar main.
-8. Terminá con una línea: el MEP venta y su fecha, el IPC y su mes, y los errores si hubo.
+8. Terminá con una línea: el MEP venta y su fecha, el IPC y su mes, y los errores si hubo. Si corrés
+   en un hilo de un proyecto, esa línea va en el estado del hilo y no como respuesta: solo respondés
+   en el hilo si la corrida falló.
