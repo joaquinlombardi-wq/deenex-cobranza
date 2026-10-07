@@ -7,6 +7,7 @@ import {
 } from '../formato.js';
 import Liquidacion from './Liquidacion.jsx';
 import BotonExcel from '../BotonExcel.jsx';
+import ActualizarCotizaciones from '../ActualizarCotizaciones.jsx';
 
 const faltanVentas = (aviso) => aviso.startsWith('Faltan las ventas');
 
@@ -24,8 +25,11 @@ export default function CierreMes({ periodoInicial, onIrCotizaciones, onCargarMe
   const [ocupado, setOcupado] = useState('');
   const mesIpc = periodo && periodoMas(periodo, -2);
 
+  const cargarCotizaciones = () =>
+    api.cotizaciones().then(setCotizaciones).catch(() => setCotizaciones({ mep: { valores: {}, fuentes: {} }, ipc: { valores: {}, fuentes: {} } }));
+
   useEffect(() => {
-    api.cotizaciones().then(setCotizaciones).catch(() => setCotizaciones({ mep: { valores: {} }, ipc: { valores: {} } }));
+    cargarCotizaciones();
     if (!periodoInicial) api.mesACerrar(hoyLocal()).then(setPeriodo).catch(() => setPeriodo(periodoMas(periodoActual(), 1)));
   }, []);
 
@@ -65,6 +69,13 @@ export default function CierreMes({ periodoInicial, onIrCotizaciones, onCargarMe
     if (!f) return;
     setFechaMep(f);
     setMepEditado(false);
+  }
+
+  // Con el botón Actualizar el cierre pasa a usar el dólar recién traído de dolarhoy.
+  async function cotizacionesActualizadas(ultima) {
+    await cargarCotizaciones();
+    if (ultima?.mep?.fecha) elegirFecha(ultima.mep.fecha);
+    setIpcEditado(false);
   }
 
   async function generar() {
@@ -117,8 +128,10 @@ export default function CierreMes({ periodoInicial, onIrCotizaciones, onCargarMe
   else if (mepEditado && cotizacionDelDia && leerMonto(mep) !== cotizacionDelDia.valor) {
     ayudaMep = `Cargado a mano. La serie dice ${numero(cotizacionDelDia.valor)} para el ${fechaCorta(cotizacionDelDia.fecha)}.`;
   } else if (cotizacionDelDia) {
+    const deDolarhoy = cotizaciones.mep.fuentes?.[cotizacionDelDia.fecha] === 'dolarhoy';
+    const hora = deDolarhoy ? cotizaciones.mep.detalleDolarhoy?.[cotizacionDelDia.fecha]?.publicado?.slice(11, 16) : null;
     ayudaMep = cotizacionDelDia.fecha === fechaMep
-      ? `MEP venta del ${diaSemana(fechaMep)} ${fechaCorta(fechaMep)}.`
+      ? `MEP venta ${deDolarhoy ? 'de dolarhoy ' : ''}del ${diaSemana(fechaMep)} ${fechaCorta(fechaMep)}${hora ? `, ${hora}` : ''}.`
       : `No hubo cotización ese día: uso la del ${diaSemana(cotizacionDelDia.fecha)} ${fechaCorta(cotizacionDelDia.fecha)}.`;
   } else ayudaMep = 'No hay cotización guardada para esa fecha. Cargala a mano y queda en Dólar e IPC.';
 
@@ -174,6 +187,7 @@ export default function CierreMes({ periodoInicial, onIrCotizaciones, onCargarMe
               : ipcEditado ? 'Se guarda en el historial al generar.' : 'Solo hace falta para acuerdos en pesos.'}
           </small>
         </label>
+        <ActualizarCotizaciones compacto onActualizado={cotizacionesActualizadas} />
       </div>
       <div className="botones generar">
         <button className="primario" onClick={generar} disabled={!!ocupado}>

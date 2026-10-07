@@ -10,14 +10,16 @@
 //   pagos/<id>                          { clienteId, pagadorId, fecha, montoArs, medio, nota }
 //   facturacion/<AAAA-MM>               { periodo, mep, renglones } lo facturado un mes anterior, importado del Excel del contador
 //   cotizaciones/mep-<AAAA>             { valores: { 'AAAA-MM-DD': venta }, fuente, origen } automático o importado
+//   cotizaciones/mep-dolarhoy           { valores, detalle } el MEP venta tomado de dolarhoy (botón Actualizar o la tarea diaria)
 //   cotizaciones/mep-manual             { valores } cargados a mano
 //   cotizaciones/ipc                    { valores: { 'AAAA-MM': 0.021 }, fuente, origen } de INDEC, toda la serie
+//   cotizaciones/estado                 { ultima } cómo salió la última actualización de dólar e IPC
 //   parametros/ipc                      { valores } cargados a mano
 import { liquidarCliente, ErrorLiquidacion, acuerdoVigente } from '../../../server/src/engine/liquidar.js';
 import { normalizarCliente, conLocalesEnMes, localesEn, gruposDeVentas } from '../../../server/src/engine/clientes.js';
 import { reemplazarVentasCliente } from '../../../server/src/engine/ventas.js';
 import { periodoAnterior, mesACerrar } from '../../../server/src/engine/periodos.js';
-import { combinarSerie } from '../../../server/src/engine/cotizaciones.js';
+import { combinarSerie, combinarMep } from '../../../server/src/engine/cotizaciones.js';
 import { resumenFacturacion } from '../../../server/src/engine/facturacion.js';
 import { vencimientoDe } from '../../../server/src/engine/cuentaCorriente.js';
 import { leerSeriePegada } from '../../../server/src/cotizaciones/importar.js';
@@ -87,16 +89,20 @@ export function crearRepositorio(store) {
     const auto = {};
     let ultimo = null;
     let manual = {};
+    let dolarhoy = {};
     for (const { id, data } of docs) {
       if (/^mep-\d{4}$/.test(id)) {
         Object.assign(auto, data.valores);
         if (!ultimo || (data.actualizado ?? '') > (ultimo.actualizado ?? '')) ultimo = data;
       } else if (id === 'mep-manual') {
         manual = data.valores ?? {};
+      } else if (id === 'mep-dolarhoy') {
+        dolarhoy = data;
       }
     }
     return {
-      ...combinarSerie(auto, manual),
+      ...combinarMep({ automatica: auto, manual, dolarhoy: dolarhoy.valores }),
+      detalleDolarhoy: dolarhoy.detalle ?? {},
       actualizado: ultimo?.actualizado ?? null,
       fuente: ultimo?.fuente ?? null,
       origen: ultimo ? ultimo.origen ?? 'automatico' : null,
@@ -267,6 +273,10 @@ export function crearRepositorio(store) {
     async cotizaciones() {
       const [mep, ipc] = await Promise.all([serieMep(), serieIpc()]);
       return { mep, ipc };
+    },
+    // Cómo salió la última actualización de dólar e IPC (la escribe la tarea programada).
+    async estadoCotizaciones() {
+      return (await store.get('cotizaciones/estado'))?.ultima ?? null;
     },
     // Serie pegada en la pestaña Dólar e IPC: el JSON de ArgentinaDatos o columnas de un Excel.
     // Pisa, día por día o mes por mes, lo que ya había de la fuente; lo cargado a mano no se toca.

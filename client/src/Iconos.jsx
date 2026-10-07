@@ -25,6 +25,7 @@ const TRAZOS = {
   izquierda: <path d="m14.5 6-6 6 6 6" />,
   derecha: <path d="m9.5 6 6 6-6 6" />,
   descargar: <path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14" />,
+  actualizar: <path d="M19.5 11a7.5 7.5 0 0 0-13.2-4.3L4.5 8.5M4.5 4v4.5H9M4.5 13a7.5 7.5 0 0 0 13.2 4.3l1.8-1.8M19.5 20v-4.5H15" />,
   cerrar: <path d="M6 6l12 12M18 6 6 18" />,
 };
 

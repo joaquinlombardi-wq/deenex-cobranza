@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import ActualizarCotizaciones from '../ActualizarCotizaciones.jsx';
 import { mepEnFecha, ultimos, actualizarPorIpc } from '../../../server/src/engine/cotizaciones.js';
 import {
   numero, pesos, nombrePeriodo, hoyLocal, periodoActual, periodoMas, fechaCorta, diaSemana, fechaHora, porcentaje, leerMonto,
@@ -15,6 +16,7 @@ const entero = (n) => n.toLocaleString('es-AR');
 
 function Origen({ fuente, origen }) {
   if (fuente === 'manual') return <span className="origen manual">A mano</span>;
+  if (fuente === 'dolarhoy') return <span className="origen dolarhoy">dolarhoy</span>;
   return <span className="origen">{origen === 'importado' ? 'Importado' : 'Automático'}</span>;
 }
 
@@ -198,7 +200,6 @@ export default function Cotizaciones() {
 
   const { mep, ipc } = datos;
   const encontrado = mepEnFecha(mep.valores, buscar);
-  const automatico = [mep, ipc].find((s) => s.origen === 'automatico');
   const acumulado = acumulado12(ipc.valores);
   const diasMep = Object.keys(mep.valores).sort();
   const mesesIpc = Object.keys(ipc.valores).sort();
@@ -207,15 +208,9 @@ export default function Cotizaciones() {
     <section>
       <h1>Dólar e IPC</h1>
       <p className="ayuda">El cierre del mes toma de acá el dólar MEP venta de la fecha que elijas y el IPC para los acuerdos en pesos.</p>
-      {automatico ? (
-        <div className="alerta ok">
-          El historial se actualiza solo cada día hábil. Última actualización: {fechaHora(automatico.actualizado)}. Fuente: {automatico.fuente}.
-        </div>
-      ) : (
-        <div className="alerta aviso">
-          La actualización automática todavía no está activa. Mientras tanto podés traer el historial completo con "Importar historial" y cargar a mano lo que falte.
-        </div>
-      )}
+      <div className="panel">
+        <ActualizarCotizaciones onActualizado={cargar} />
+      </div>
       {mensaje && <div className={`alerta ${mensaje.tipo}`}>{mensaje.texto}</div>}
 
       <div className="dos-columnas">

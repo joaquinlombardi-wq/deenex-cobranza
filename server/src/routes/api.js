@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { validarRuta } from '../store/documentos.js';
-import { traerCotizaciones, documentosCotizaciones } from '../cotizaciones/fuentes.js';
+import { traerFuentes, armarActualizacion } from '../cotizaciones/actualizar.js';
 import { combinarVentas } from '../engine/ventas.js';
 
 export function crearApi(docs) {
@@ -62,11 +62,17 @@ export function crearApi(docs) {
     res.json({ cargadas: filas.length });
   });
 
-  // Trae el historial de dólar MEP e IPC de las fuentes públicas y lo guarda.
-  api.post('/cotizaciones/actualizar', async (_req, res) => {
-    const documentos = documentosCotizaciones(await traerCotizaciones());
-    for (const { path, data } of documentos) await docs.set(path, data);
-    res.json({ documentos: documentos.map((d) => ({ path: d.path, valores: Object.keys(d.data.valores).length })) });
+  // Trae el MEP de dolarhoy, el IPC del INDEC y el historial de ArgentinaDatos, y lo guarda (lo mismo
+  // que hace la tarea programada en la versión de claude.ai). `{ pedido: 'boton' }` pisa el MEP del día.
+  api.post('/cotizaciones/actualizar', async (req, res) => {
+    const ahora = new Date().toISOString();
+    const actuales = Object.fromEntries((await docs.list('cotizaciones')).map(({ id, data }) => [id, data]));
+    const pedido = req.body?.pedido === 'boton' ? 'boton' : 'automatico';
+    const { documentos, estado } = armarActualizacion({ actuales, fuentes: await traerFuentes(), ahora, pedido });
+    estado.ultima.fin = new Date().toISOString();
+    for (const { id, data } of documentos) await docs.set(`cotizaciones/${id}`, data);
+    await docs.set('cotizaciones/estado', estado);
+    res.json(estado);
   });
 
   api.use((err, _req, res, _next) => {

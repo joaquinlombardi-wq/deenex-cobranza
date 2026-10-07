@@ -67,11 +67,12 @@ Con base real: `MONGODB_URI=mongodb://127.0.0.1:27017/deenex-cobranza npm run de
 
 ## Dólar MEP e IPC
 
-- Fuentes: dólar bolsa (MEP) venta de [ArgentinaDatos](https://api.argentinadatos.com/v1/cotizaciones/dolares/bolsa) (historial) y [DolarApi](https://dolarapi.com/v1/dolares/bolsa) (el del día); IPC mensual de INDEC vía [ArgentinaDatos](https://api.argentinadatos.com/v1/finanzas/indices/inflacion).
-- `npm run cotizaciones --workspace server -- <carpeta>` baja todo y deja un JSON por documento (`cotizaciones/mep-<AAAA>`, `cotizaciones/ipc`). Con el servidor andando, `POST /api/cotizaciones/actualizar` hace lo mismo y lo guarda en la base.
-- Lo cargado a mano (`cotizaciones/mep-manual`, `parametros/ipc`) completa los días o meses que la fuente no tiene. El cierre guarda el dólar que usó, así que un cambio posterior en la serie no toca lo ya cobrado.
-- Se guarda toda la serie: el IPC mensual desde marzo de 1943 y todo el historial de MEP que tenga la fuente.
-- Mientras no corra la actualización automática, la pestaña Dólar e IPC tiene "Importar historial": se abre la página de la fuente en el navegador, se copia todo y se pega (también acepta dos columnas pegadas de un Excel). Lo lee `server/src/cotizaciones/importar.js`.
+- Fuentes: el MEP venta de [dolarhoy](https://dolarhoy.com/cotizacion-dolar-mep), que es el que se usa para facturar (se lee la página, que solo muestra el valor del momento); el IPC mensual del [INDEC](https://www.indec.gob.ar/ftp/cuadros/economia/serie_ipc_divisiones.csv) (nivel general nacional, con un decimal, como lo publica); y el historial de [ArgentinaDatos](https://api.argentinadatos.com/v1/cotizaciones/dolares/bolsa): dólar bolsa venta, y el [IPC](https://api.argentinadatos.com/v1/finanzas/indices/inflacion) desde marzo de 1943.
+- Qué MEP usa el cierre para cada día: el tomado de dolarhoy; si no hay, el cargado a mano; si tampoco, el historial de ArgentinaDatos (`combinarMep`). En el IPC manda el INDEC y lo cargado a mano completa los meses que faltan. El cierre guarda el dólar que usó, así que un cambio posterior en la serie no toca lo ya cobrado.
+- `node server/scripts/cotizaciones.mjs --salida <carpeta> [--actuales <carpeta>] [--pedido boton|automatico]` trae todo y deja un JSON por documento que cambió (`mep-dolarhoy`, `mep-<AAAA>`, `ipc`) más `estado`. Corre con Node solo, sin dependencias. Si una fuente falla, sigue con las otras y lo anota en `estado`. Una lectura de dolarhoy que se aleja más de 25% del último MEP conocido no se guarda. Con el servidor andando, `POST /api/cotizaciones/actualizar` hace lo mismo y lo guarda en la base.
+- Botón "Actualizar dólar e IPC" (en Cierre del mes y en Dólar e IPC): en claude.ai la app no puede entrar a otras páginas, así que arranca por el conector Claude Code Remote la rutina de `server/scripts/rutina-cotizaciones.md` y espera a que deje el resultado en `cotizaciones/estado`. En el cierre, el dólar recién traído pasa a ser el del cierre. La misma rutina corre sola los días hábiles a las 17:10: el botón pisa el valor de dolarhoy del día y la corrida diaria solo lo completa si no estaba.
+- La rutina necesita un entorno de Claude Code con acceso a dolarhoy.com, www.indec.gob.ar y api.argentinadatos.com. Su id va en `client/.env.artifact` (`VITE_RUTINA_COTIZACIONES`); sin id, el botón no aparece.
+- "Importar historial", en Dólar e IPC, sigue sirviendo para pegar el JSON de ArgentinaDatos o columnas de un Excel. Lo lee `server/src/cotizaciones/importar.js`.
 - `actualizarPorIpc(monto, ipc, desde, hasta)` (en el motor) lleva un monto de un mes a otro con el IPC de cada mes del medio; lo usa la calculadora de esa pestaña.
 
 ## Ventas: análisis de la facturación
@@ -102,7 +103,7 @@ Hasta que esté conectada la plataforma, las ventas para la comisión se cargan 
 
 `npm run build:artifact --workspace client` arma `client/dist-artifact/cobranza.html`: el mismo frontend con el motor corriendo en el navegador y los datos en la base del artifact (`client/src/backend/store-artifact.js`). Es la versión que usa Joaco mientras no haya un servidor con MongoDB.
 
-Se publica con las capacidades `db` (la base) y `downloads` (bajar el Excel para el contador; el navegador del artifact no deja bajar archivos de otra forma). ExcelJS se carga recién al bajar el Excel, desde jsdelivr (`client/src/excel.js`).
+Se publica con las capacidades `db` (la base), `downloads` (bajar el Excel para el contador; el navegador del artifact no deja bajar archivos de otra forma) y `mcp` (el conector Claude Code Remote, con `fire_trigger` para arrancar la rutina de cotizaciones y `get_trigger` para ver cómo terminó). ExcelJS se carga recién al bajar el Excel, desde jsdelivr (`client/src/excel.js`).
 
 Documentos (los mismos en el artifact y en Mongo):
 
@@ -116,6 +117,8 @@ Documentos (los mismos en el artifact y en Mongo):
 | `pagos/<fecha>~<id>` | `{ clienteId, pagadorId, fecha, montoArs, medio, nota }` |
 | `facturacion/<AAAA-MM>` | un mes importado del Excel: `{ periodo, mep, renglones }` |
 | `cotizaciones/mep-<AAAA>`, `cotizaciones/ipc` | series automáticas (`{ valores, fuente, actualizado }`) |
+| `cotizaciones/mep-dolarhoy` | el MEP venta tomado de dolarhoy: `{ valores, detalle: { fecha: { compra, venta, publicado, leidoEn, pedido } } }` |
+| `cotizaciones/estado` | cómo salió la última actualización: `{ ultima: { pedido, inicio, fin, ok, mep, ipc, errores, documentos } }` |
 | `cotizaciones/mep-manual`, `parametros/ipc` | lo cargado a mano (`{ valores }`) |
 
-El artifact no puede llamar a APIs externas, así que las series automáticas las escribe una rutina programada que corre el script de cotizaciones y guarda los documentos en la base del artifact. La rutina necesita un entorno con acceso a `api.argentinadatos.com` y `dolarapi.com`.
+El artifact no puede llamar a otras páginas, así que el dólar y el IPC los escribe la rutina de cotizaciones (ver Dólar MEP e IPC).

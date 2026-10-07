@@ -2,22 +2,30 @@
 import { D, redondear } from './dinero.js';
 import { periodoAnterior, compararPeriodos } from './periodos.js';
 
-// Une la serie que llega de la fuente con la cargada a mano: la fuente manda y lo manual
-// completa los huecos (días sin cotización, IPC que todavía no se publicó).
-export function combinarSerie(automatica = {}, manual = {}) {
+// Une capas de una serie, de la que menos manda a la que más: cada una pisa a las anteriores.
+// `fuentes` dice de qué capa salió cada valor.
+function combinarCapas(capas) {
   const valores = {};
   const fuentes = {};
-  for (const [clave, valor] of Object.entries(manual ?? {})) {
-    if (valor == null) continue;
-    valores[clave] = valor;
-    fuentes[clave] = 'manual';
-  }
-  for (const [clave, valor] of Object.entries(automatica ?? {})) {
-    if (valor == null) continue;
-    valores[clave] = valor;
-    fuentes[clave] = 'automatica';
+  for (const [nombre, serie] of capas) {
+    for (const [clave, valor] of Object.entries(serie ?? {})) {
+      if (valor == null) continue;
+      valores[clave] = valor;
+      fuentes[clave] = nombre;
+    }
   }
   return { valores, fuentes };
+}
+
+// IPC: la fuente (INDEC) manda y lo manual completa los huecos (un mes que todavía no se publicó).
+export function combinarSerie(automatica = {}, manual = {}) {
+  return combinarCapas([['manual', manual], ['automatica', automatica]]);
+}
+
+// MEP: manda lo tomado de dolarhoy, que es la referencia para facturar; después lo cargado a mano
+// (también sale de dolarhoy) y por último el historial de ArgentinaDatos, que completa el resto.
+export function combinarMep({ automatica = {}, manual = {}, dolarhoy = {} }) {
+  return combinarCapas([['automatica', automatica], ['manual', manual], ['dolarhoy', dolarhoy]]);
 }
 
 const DIA_MS = 86400000;
