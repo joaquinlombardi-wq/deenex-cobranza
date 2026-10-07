@@ -2,9 +2,13 @@ import { fileURLToPath } from 'node:url';
 import { crearApp } from './app.js';
 import { crearDocumentosMongo, crearDocumentosMemoria } from './store/documentos.js';
 import { documentosDemo } from './demo.js';
+import { limpiarDireccion, queRevisar, sinComillas } from './store/direccionMongo.js';
 
 const PORT = process.env.PORT ?? 4000;
-const { MONGODB_URI, APP_CLAVE, APP_USUARIO = 'deenex' } = process.env;
+// Los valores se pegan a mano en Render: se perdonan las comillas, los espacios y los < > de Atlas.
+const MONGODB_URI = limpiarDireccion(process.env.MONGODB_URI ?? '');
+const APP_CLAVE = sinComillas(process.env.APP_CLAVE ?? '');
+const APP_USUARIO = sinComillas(process.env.APP_USUARIO ?? '') || 'deenex';
 
 // Con una base real la app queda en internet: sin clave no arranca.
 if (MONGODB_URI && !APP_CLAVE) {
@@ -18,7 +22,7 @@ try {
   docs = MONGODB_URI ? await crearDocumentosMongo(MONGODB_URI) : crearDocumentosMemoria(documentosDemo());
 } catch (e) {
   console.error(`No pude conectarme a MongoDB: ${e.message}`);
-  console.error('Revisá MONGODB_URI (usuario y contraseña incluidos) y que en Atlas, Network Access, esté permitida la entrada desde 0.0.0.0/0.');
+  console.error(queRevisar(e, MONGODB_URI));
   process.exit(1);
 }
 

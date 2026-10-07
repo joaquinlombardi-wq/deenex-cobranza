@@ -138,5 +138,6 @@ La versión con servidor es la misma app con los datos en MongoDB. Corre en el [
 Cómo se comporta:
 
 - Pide usuario y clave (HTTP Basic) para todo menos `/api/salud`. Con `MONGODB_URI` y sin `APP_CLAVE` no arranca.
+- Perdona los errores típicos al pegar en Render: comillas o espacios alrededor, los `< >` que Atlas pone alrededor de la contraseña y los signos de la contraseña que hay que escapar (`@ : / ? #`). Si igual no se conecta, el log de Render dice qué revisar (contraseña, cluster o Network Access).
 - El plan gratis se duerme a los 15 minutos sin uso y tarda cerca de un minuto en despertar. Por eso el dólar y el IPC no esperan una hora fija: el server los trae la primera vez que se usa la app cada día (hora argentina), salvo que ese día ya se hayan traído bien, también con el botón, y si falla reintenta a la media hora. Un día sin uso no tiene lectura de dolarhoy y el cierre usa el historial de ArgentinaDatos; el día del cierre, el botón trae el valor del momento.
 - La rutina de Claude Code escribe en la base del artifact, no en Mongo: cuando se deje de usar la versión de claude.ai, se apaga.
