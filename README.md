@@ -13,12 +13,13 @@ npm run dev:server   # API en :4000. Sin MONGODB_URI arranca en modo demo (en me
 npm run dev:client   # pantallas en http://localhost:5173
 ```
 
-Con base real: `MONGODB_URI=mongodb://127.0.0.1:27017/deenex-cobranza npm run dev:server`.
+Con base real: `MONGODB_URI=mongodb://127.0.0.1:27017/deenex-cobranza APP_CLAVE=una-clave npm run dev:server` (con base real no arranca sin clave). `npm run build && npm start` sirve la app armada y la API juntas en :4000, como en Render.
 
 ## Estructura
 
 - `server/src/engine/` · motor puro (sin base de datos): `liquidar.js` (`liquidarCliente(cliente, { periodo, mep, ipc, ventas })`), `cuentaCorriente.js` (`estadoDeCuenta({ cargos, pagos, hoy })`), `facturacion.js` (`resumenFacturacion`: MRR y extra jobs mes a mes) y `cotizaciones.js` (series de MEP e IPC).
 - `client/src/backend/repositorio.js` · la lógica de datos, igual para el artifact y para el servidor: recibe un store de documentos (`get`, `set`, `delete`, `list`).
+- `server/src/app.js` · el servidor: la API, la app armada (`client/dist`), usuario y clave (`clave.js`) y el dólar e IPC del día (`cotizaciones/diaria.js`).
 - `server/src/store/documentos.js` · ese store sobre MongoDB (colección `documentos`) o en memoria (modo demo). `server/src/routes/api.js` lo expone en `/api/docs/:coleccion/:id`.
 - `server/src/cotizaciones/` y `server/scripts/cotizaciones.mjs` · traen el historial de dólar MEP e IPC.
 - `server/src/facturacion/importarDetalle.js` · lee la hoja DETALLE del Excel de facturación pegada y reconoce a qué cliente es cada factura.
@@ -72,6 +73,7 @@ Con base real: `MONGODB_URI=mongodb://127.0.0.1:27017/deenex-cobranza npm run de
 - `node server/scripts/cotizaciones.mjs --salida <carpeta> [--actuales <carpeta>] [--pedido boton|automatico]` trae todo y deja un JSON por documento que cambió (`mep-dolarhoy`, `mep-<AAAA>`, `ipc`) más `estado`. Corre con Node solo, sin dependencias; detrás de un proxy se relanza con `NODE_USE_ENV_PROXY=1` (hace falta Node 22.21 o más nuevo). Si una fuente falla, sigue con las otras y lo anota en `estado`. Una lectura de dolarhoy que se aleja más de 25% del último MEP conocido no se guarda. Con el servidor andando, `POST /api/cotizaciones/actualizar` hace lo mismo y lo guarda en la base.
 - Botón "Actualizar dólar e IPC" (en Cierre del mes y en Dólar e IPC): en claude.ai la app no puede entrar a otras páginas, así que arranca por el conector Claude Code Remote la rutina de `server/scripts/rutina-cotizaciones.md` y espera a que deje el resultado en `cotizaciones/estado`. En el cierre, el dólar recién traído pasa a ser el del cierre. La misma rutina corre sola los días hábiles a las 17:10: el botón pisa el valor de dolarhoy del día y la corrida diaria solo lo completa si no estaba.
 - La rutina necesita un entorno de Claude Code con acceso (nivel Limitado, dominios permitidos) a dolarhoy.com, www.indec.gob.ar, api.argentinadatos.com y github.com, para bajar el código. Desde un proyecto privado una rutina dispara siempre en la sesión que la creó, así que la crea y la corre el hilo "Cotizaciones automáticas" del proyecto, que usa ese entorno. Como Claude Code da la corrida por buena apenas despierta esa sesión, la app espera el resultado en `cotizaciones/estado` (hasta 15 minutos) y solo corta antes si la rutina no se pudo disparar. Su id va en `client/.env.artifact` (`VITE_RUTINA_COTIZACIONES`); sin id, el botón no aparece.
+- En la versión con servidor no hay rutina: el botón le pide al server que lo traiga y contesta en el momento, y el server lo trae solo una vez por día (ver Publicarla gratis).
 - "Importar historial", en Dólar e IPC, sigue sirviendo para pegar el JSON de ArgentinaDatos o columnas de un Excel. Lo lee `server/src/cotizaciones/importar.js`.
 - `actualizarPorIpc(monto, ipc, desde, hasta)` (en el motor) lleva un monto de un mes a otro con el IPC de cada mes del medio; lo usa la calculadora de esa pestaña.
 
@@ -99,11 +101,13 @@ Hasta que esté conectada la plataforma, las ventas para la comisión se cargan 
 
 `grupo` es `propios` (los locales propios), `franquiciados` (los franquiciados, cuando paga la marca) o el `id` del franquiciado (cuando paga cada uno). Si la marca paga todo con la misma comisión también sirve un solo total con `"grupo": "todos"`. Si un grupo no vendió en un canal, mandar la fila con 0.
 
+En la versión publicada la API pide el mismo usuario y clave que la app: `curl -u deenex:<clave> -H 'Content-Type: application/json' -d '<filas>' https://<app>.onrender.com/api/ventas`.
+
 ## Versión publicada en claude.ai
 
 `npm run build:artifact --workspace client` arma `client/dist-artifact/cobranza.html`: el mismo frontend con el motor corriendo en el navegador y los datos en la base del artifact (`client/src/backend/store-artifact.js`). Es la versión que usa Joaco mientras no haya un servidor con MongoDB.
 
-Se publica con las capacidades `db` (la base), `downloads` (bajar el Excel para el contador; el navegador del artifact no deja bajar archivos de otra forma) y `mcp` (el conector Claude Code Remote, con `fire_trigger` para arrancar la rutina de cotizaciones y `get_trigger` para ver cómo terminó). ExcelJS se carga recién al bajar el Excel, desde jsdelivr (`client/src/excel.js`).
+Se publica con las capacidades `db` (la base), `downloads` (bajar el Excel para el contador y el respaldo; el navegador del artifact no deja bajar archivos de otra forma) y `mcp` (el conector Claude Code Remote, con `fire_trigger` para arrancar la rutina de cotizaciones y `get_trigger` para ver cómo terminó). ExcelJS se carga recién al bajar el Excel, desde jsdelivr (`client/src/excel.js`).
 
 Documentos (los mismos en el artifact y en Mongo):
 
@@ -122,3 +126,17 @@ Documentos (los mismos en el artifact y en Mongo):
 | `cotizaciones/mep-manual`, `parametros/ipc` | lo cargado a mano (`{ valores }`) |
 
 El artifact no puede llamar a otras páginas, así que el dólar y el IPC los escribe la rutina de cotizaciones (ver Dólar MEP e IPC).
+
+## Publicarla gratis (Render + MongoDB Atlas)
+
+La versión con servidor es la misma app con los datos en MongoDB. Corre en el [plan gratis de Render](https://render.com/docs/free) con la [base gratis de Atlas](https://www.mongodb.com/docs/atlas/reference/free-shared-limitations/) (M0, 512 MB; hoy los datos ocupan menos de 1 MB).
+
+1. **Atlas**: crear un cluster M0 en AWS, región N. Virginia (`us-east-1`, cerca del server). En Database Access, un usuario con contraseña; en Network Access, permitir `0.0.0.0/0` (el plan gratis de Render no tiene IP fija). En Connect → Drivers, copiar la dirección `mongodb+srv://…` y poner la contraseña. Si la dirección no trae nombre de base, guarda en `cobranza`.
+2. **Render**: New → Blueprint → este repo. Lee `render.yaml` y pide `MONGODB_URI` (la dirección de Atlas) y `APP_CLAVE` (la clave para entrar; el usuario es `deenex`, o el de `APP_USUARIO`). Cada push a `main` se publica solo.
+3. **Datos**: en la versión de claude.ai, Respaldo → Bajar respaldo. En la nueva, que arranca vacía y lo avisa, Respaldo → Elegir el archivo → Cargar estos datos. Solo carga en una base sin datos propios (el dólar y el IPC que ya trajo se juntan con los del respaldo); si se corta, se vuelve a cargar el mismo archivo y sigue.
+
+Cómo se comporta:
+
+- Pide usuario y clave (HTTP Basic) para todo menos `/api/salud`. Con `MONGODB_URI` y sin `APP_CLAVE` no arranca.
+- El plan gratis se duerme a los 15 minutos sin uso y tarda cerca de un minuto en despertar. Por eso el dólar y el IPC no esperan una hora fija: el server los trae la primera vez que se usa la app cada día (hora argentina), salvo que ese día ya se hayan traído bien, también con el botón, y si falla reintenta a la media hora. Un día sin uso no tiene lectura de dolarhoy y el cierre usa el historial de ArgentinaDatos; el día del cierre, el botón trae el valor del momento.
+- La rutina de Claude Code escribe en la base del artifact, no en Mongo: cuando se deje de usar la versión de claude.ai, se apaga.

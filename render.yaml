@@ -1,0 +1,19 @@
+# Blueprint de Render: la app con su servidor, en el plan gratis. En Render: New → Blueprint, elegir
+# este repo y completar MONGODB_URI (la dirección de MongoDB Atlas) y APP_CLAVE (la clave para
+# entrar; el usuario es "deenex"). Los pasos están en el README, "Publicarla gratis".
+services:
+  - type: web
+    name: deenex-cobranza
+    runtime: node
+    plan: free
+    # Cerca del cluster de Atlas (AWS us-east-1).
+    region: virginia
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: MONGODB_URI
+        sync: false
+      - key: APP_CLAVE
+        sync: false

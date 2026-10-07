@@ -403,3 +403,7 @@ button:disabled { opacity: .6; cursor: default; }
   .kpi strong { font-size: 19px; }
   .segmentado button { padding: 6px 10px; }
 }
+
+/* Respaldo */
+.bajar-respaldo, .cargar-respaldo > button { margin-top: 14px; }
+.cargar-respaldo .alerta { margin-top: 14px; }

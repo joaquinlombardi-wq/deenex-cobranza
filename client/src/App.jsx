@@ -8,6 +8,7 @@ import AltaCliente from './pages/AltaCliente.jsx';
 import EstadoCuenta from './pages/EstadoCuenta.jsx';
 import Ventas from './pages/Ventas.jsx';
 import Cotizaciones from './pages/Cotizaciones.jsx';
+import Respaldo from './pages/Respaldo.jsx';
 
 const SECCIONES = [
   { id: 'cierre', nombre: 'Cierre del mes' },
@@ -15,7 +16,10 @@ const SECCIONES = [
   { id: 'clientes', nombre: 'Clientes' },
   { id: 'ventas', nombre: 'Ventas' },
   { id: 'cotizaciones', nombre: 'Dólar e IPC' },
+  { id: 'respaldo', nombre: 'Respaldo' },
 ];
+// La versión con servidor arranca vacía: avisa cómo traer los datos de la de claude.ai.
+const conServidor = import.meta.env.MODE !== 'artifact';
 
 // Si el menú queda abierto o cerrado se recuerda en este navegador, cuando deja guardar.
 const CLAVE_MENU = 'deenex-cobranza.menu';
@@ -39,17 +43,23 @@ export default function App() {
   const [guardaDatos, setGuardaDatos] = useState(true);
   const [menuAbierto, setMenuAbierto] = useState(menuAbiertoGuardado);
   const [menuCelular, setMenuCelular] = useState(false);
+  const [sinClientes, setSinClientes] = useState(false);
+  const revisarClientes = () => conServidor && api.clientes().then((l) => setSinClientes(l.length === 0)).catch(() => {});
   const ir = (pagina, extra = {}) => {
     setVista({ pagina, ...extra });
     setMenuCelular(false);
     window.scrollTo?.(0, 0);
+    if (sinClientes) revisarClientes();
   };
   const irAlCierre = (periodo) => ir('cierre', { periodo });
   // Las ventas y los locales de un mes se cargan en la cuenta del cliente.
   const cargarMes = (cliente, mes, volverAlCierre) => ir('cuenta', { cliente, pestana: 'mes', mes, volverAlCierre });
   const seccion = ['alta', 'cuenta'].includes(vista.pagina) ? 'clientes' : vista.pagina;
 
-  useEffect(() => { api.estado().then((e) => setGuardaDatos(e.guardaDatos)); }, []);
+  useEffect(() => {
+    api.estado().then((e) => setGuardaDatos(e.guardaDatos));
+    revisarClientes();
+  }, []);
 
   useEffect(() => {
     if (!menuCelular) return undefined;
@@ -109,6 +119,12 @@ export default function App() {
         </header>
         <main>
           {!guardaDatos && <div className="alerta aviso">Esta vista no puede guardar datos: lo que cargues se pierde al cerrar.</div>}
+          {sinClientes && vista.pagina !== 'respaldo' && (
+            <div className="alerta aviso sin-pasar">
+              <span>Esta versión todavía no tiene clientes. Si ya usabas la app en claude.ai, traé tus datos con un respaldo.</span>
+              <button className="link" onClick={() => ir('respaldo')}>Traer mis datos</button>
+            </div>
+          )}
           {vista.pagina === 'cierre' && (
             <CierreMes
               key={vista.periodo ?? 'cierre'}
@@ -120,6 +136,7 @@ export default function App() {
           {vista.pagina === 'historial' && <Historial onIrCierre={irAlCierre} />}
           {vista.pagina === 'ventas' && <Ventas onIrCierre={irAlCierre} />}
           {vista.pagina === 'cotizaciones' && <Cotizaciones />}
+          {vista.pagina === 'respaldo' && <Respaldo onCargado={() => setSinClientes(false)} onIrClientes={() => ir('clientes')} />}
           {vista.pagina === 'clientes' && (
             <Clientes
               onNuevo={() => ir('alta')}

@@ -21,6 +21,12 @@ const TRAZOS = {
   ),
   ventas: <path d="M4 4v16h16M8.5 16v-5M13 16V8M17.5 16v-3" />,
   cotizaciones: <path d="M12 3v18M16.5 6.5H10a3 3 0 0 0 0 6h4a3 3 0 0 1 0 6H7" />,
+  respaldo: (
+    <>
+      <rect x="3.5" y="4" width="17" height="5" rx="1.5" />
+      <path d="M5 9v9.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V9M10 13h4" />
+    </>
+  ),
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   izquierda: <path d="m14.5 6-6 6 6 6" />,
   derecha: <path d="m9.5 6 6 6-6 6" />,

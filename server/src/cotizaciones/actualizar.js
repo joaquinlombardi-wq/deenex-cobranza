@@ -167,3 +167,15 @@ export function armarActualizacion({ actuales = {}, fuentes, ahora, pedido = 'au
   ultima.documentos = documentos.map((d) => d.id);
   return { documentos, estado: { ultima } };
 }
+
+// La actualización completa sobre la base del servidor ({ get, set, list }): lo que hacen el botón y
+// la corrida del día en la versión con servidor. Devuelve el estado que guarda.
+export async function actualizarEnBase(docs, { pedido = 'automatico', traer = traerFuentes } = {}) {
+  const ahora = new Date().toISOString();
+  const actuales = Object.fromEntries((await docs.list('cotizaciones')).map(({ id, data }) => [id, data]));
+  const { documentos, estado } = armarActualizacion({ actuales, fuentes: await traer(), ahora, pedido });
+  estado.ultima.fin = new Date().toISOString();
+  for (const { id, data } of documentos) await docs.set(`cotizaciones/${id}`, data);
+  await docs.set('cotizaciones/estado', estado);
+  return estado;
+}

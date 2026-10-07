@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Icono from './Iconos.jsx';
-import { descargarExcelContador, puedeDescargar } from './excel.js';
+import { descargarExcelContador } from './excel.js';
+import { puedeDescargar } from './descargas.js';
 
 // Botón que arma y ofrece el Excel para el contador de un cierre.
 export default function BotonExcel({ cierre, clase = 'primario', texto = 'Descargar Excel' }) {

@@ -8,10 +8,13 @@ import { numero, nombrePeriodo, fechaCorta, fechaHora, porcentaje } from './form
 const CADA = 8000;
 const PREGUNTAR_A_CLAUDE_CADA = 4; // vueltas: get_trigger cada ~30 segundos
 const ESPERA_MAXIMA = 15 * 60000;
-// El pedido en curso se recuerda en este navegador, para seguir esperando si se cambia de pantalla.
+// En claude.ai el pedido en curso se recuerda en este navegador, para seguir esperando si se cambia
+// de pantalla. Con el servidor no hace falta: contesta en el momento.
 const CLAVE = 'deenex-cobranza.pedidoCotizaciones';
+const enArtifact = import.meta.env.MODE === 'artifact';
 
 function recordarPedido(desde) {
+  if (!enArtifact) return;
   try {
     if (desde) localStorage.setItem(CLAVE, desde);
     else localStorage.removeItem(CLAVE);
@@ -21,6 +24,7 @@ function recordarPedido(desde) {
 }
 
 function pedidoGuardado() {
+  if (!enArtifact) return null;
   try {
     const desde = localStorage.getItem(CLAVE);
     return desde && Date.now() - Date.parse(desde) < ESPERA_MAXIMA ? desde : null;
@@ -169,7 +173,9 @@ export default function ActualizarCotizaciones({ onActualizado, compacto = false
           </button>
           {pedido && (
             <span className="nota-descarga" role="status">
-              {pedido.aviso ?? 'Buscando en dolarhoy y en el INDEC. Tarda un rato porque arranca una tarea aparte; podés seguir usando la app.'}
+              {pedido.aviso ?? (enArtifact
+                ? 'Buscando en dolarhoy y en el INDEC. Tarda un rato porque arranca una tarea aparte; podés seguir usando la app.'
+                : 'Buscando en dolarhoy y en el INDEC…')}
             </span>
           )}
         </div>

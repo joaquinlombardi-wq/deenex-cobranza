@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearDocumentosMemoria } from '../src/store/documentos.js';
 import { estadoDeCuenta } from '../src/engine/cuentaCorriente.js';
-import { crearRepositorio } from '../../client/src/backend/repositorio.js';
+import { crearRepositorio, leerRespaldo, COLECCIONES } from '../../client/src/backend/repositorio.js';
 
 // El repositorio arma los filtros como la base del artifact ([campo, '==', valor]); el store del
 // servidor los recibe de la URL como [campo, valor].
@@ -125,4 +125,82 @@ test('Lo que se carga mes a mes en la cuenta de un cliente lo usa el cierre del 
   const cliente = await repo.guardarMesCliente('quem', '2026-10', { locales: { propios: 12 }, valores: {} });
   assert.deepEqual(cliente.cambiosLocales, []);
   assert.deepEqual(await repo.ventasDeCliente('quem'), []);
+});
+
+// Una base con un poco de todo, como la de claude.ai: cliente, cierre pasado a cuentas, saldo
+// anterior, pago, ventas, dólar e IPC cargados a mano y traídos.
+async function baseConDatos() {
+  const { repo, store } = repositorio();
+  await repo.crearCliente(quem);
+  await repo.cargarSaldoAnterior({ clienteId: 'quem', fecha: '2026-10-10', montoArs: 1057796.52, concepto: 'Factura de Octubre 2026 (F-03)' });
+  await repo.guardarMesCliente('quem', '2026-10', { valores: { 'propios|delivery': 1500000 } });
+  await repo.liquidar({ periodo: '2026-11', mep: 1538 });
+  await repo.confirmarCierre('2026-11');
+  await repo.registrarPago({ clienteId: 'quem', pagadorId: 'marca', fecha: '2026-10-09', montoArs: 500000, medio: 'Transferencia' });
+  await repo.guardarMepManual('2026-10-01', 1538);
+  await repo.guardarIpcManual('2026-09', 0.021);
+  await store.set('cotizaciones/mep-dolarhoy', { valores: { '2026-10-07': 1544.4 }, detalle: { '2026-10-07': { venta: 1544.4, pedido: 'boton' } } });
+  await store.set('cotizaciones/estado', { ultima: { pedido: 'boton', inicio: '2026-10-07T11:03:00.000Z', ok: true } });
+  return { repo, store };
+}
+
+// Todo lo guardado, como JSON (la base de memoria guarda también los campos sin valor; las de verdad, no).
+async function todo(store) {
+  const listas = await Promise.all(COLECCIONES.map((c) => store.list(c)));
+  const docs = COLECCIONES.flatMap((c, i) => listas[i].map(({ id, data }) => [`${c}/${id}`, data]));
+  return JSON.parse(JSON.stringify(docs.sort(([a], [b]) => a.localeCompare(b))));
+}
+
+test('El respaldo lleva todo y se carga igual en una base vacía', async () => {
+  const origen = await baseConDatos();
+  const respaldo = JSON.parse(JSON.stringify(await origen.repo.respaldo()));
+  const destino = repositorio();
+  assert.deepEqual(await destino.repo.coleccionesConDatos(), []);
+
+  const { cantidades } = await destino.repo.restaurarRespaldo(respaldo);
+  assert.deepEqual(cantidades, { clientes: 1, ventas: 1, cierres: 1, cargos: 2, pagos: 1, facturacion: 0, cotizaciones: 3, parametros: 1 });
+  assert.deepEqual(await todo(destino.store), await todo(origen.store));
+  assert.deepEqual(await destino.repo.coleccionesConDatos(), ['clientes', 'ventas', 'cierres', 'cargos', 'pagos', 'parametros']);
+});
+
+test('El respaldo no se carga sobre otros datos, pero una carga cortada se puede terminar', async () => {
+  const respaldo = await (await baseConDatos()).repo.respaldo();
+
+  const otra = repositorio();
+  await otra.repo.crearCliente(pannus);
+  await assert.rejects(otra.repo.restaurarRespaldo(respaldo), /ya tiene otros datos \(clientes\)/);
+  assert.deepEqual((await otra.repo.clientes()).map((c) => c.id), ['pannus']);
+
+  const cortada = repositorio();
+  const [primero] = respaldo.documentos.filter((d) => d.path.startsWith('clientes/'));
+  await cortada.store.set(primero.path, primero.data);
+  await cortada.repo.restaurarRespaldo(respaldo);
+  assert.equal((await cortada.repo.cuentas()).cargos.length, 2);
+});
+
+test('Al cargar el respaldo se juntan el dólar y el IPC que la base nueva ya había traído', async () => {
+  const respaldo = await (await baseConDatos()).repo.respaldo();
+  const nueva = repositorio();
+  const estadoNuevo = { ultima: { pedido: 'automatico', inicio: '2026-10-08T12:00:00.000Z', ok: true } };
+  await nueva.store.set('cotizaciones/mep-dolarhoy', { valores: { '2026-10-08': 1560 }, detalle: { '2026-10-08': { venta: 1560, pedido: 'automatico' } } });
+  await nueva.store.set('cotizaciones/estado', estadoNuevo);
+
+  await nueva.repo.restaurarRespaldo(respaldo);
+  const dolarhoy = await nueva.store.get('cotizaciones/mep-dolarhoy');
+  assert.deepEqual(dolarhoy.valores, { '2026-10-07': 1544.4, '2026-10-08': 1560 });
+  assert.deepEqual(Object.keys(dolarhoy.detalle), ['2026-10-07', '2026-10-08']);
+  assert.deepEqual(await nueva.store.get('cotizaciones/estado'), estadoNuevo);
+  assert.deepEqual((await nueva.store.get('cotizaciones/mep-manual')).valores, { '2026-10-01': 1538 });
+});
+
+test('Un archivo que no es un respaldo se rechaza sin tocar la base', async () => {
+  const { repo, store } = repositorio();
+  const con = (documentos) => ({ formato: 'deenex-cobranza/respaldo', version: 1, documentos });
+  assert.throws(() => leerRespaldo({ clientes: [] }), /no es un respaldo de Deenex Cobranza/);
+  assert.throws(() => leerRespaldo({ ...con([]), version: 2 }), /versión más nueva/);
+  assert.throws(() => leerRespaldo(con([{ path: 'usuarios/joaco', data: {} }])), /no reconozco \(usuarios\/joaco\)/);
+  assert.throws(() => leerRespaldo(con([{ path: 'clientes/..', data: {} }])), /no reconozco/);
+  assert.throws(() => leerRespaldo(con([{ path: 'clientes/quem', data: [1] }])), /no reconozco/);
+  await assert.rejects(repo.restaurarRespaldo(con([{ path: 'clientes/quem', data: quem }, { path: 'clientes', data: {} }])), /no reconozco/);
+  assert.deepEqual(await todo(store), []);
 });

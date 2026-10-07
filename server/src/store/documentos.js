@@ -2,15 +2,7 @@
 // (rutas 'coleccion/id'), así el frontend usa la misma lógica con cualquiera de los dos.
 import mongoose from 'mongoose';
 
-const SEGMENTO = /^[A-Za-z0-9_\-.~:@+]{1,200}$/;
-
-export function validarRuta(path, segmentos) {
-  const partes = path.split('/');
-  if (partes.length !== segmentos || !partes.every((p) => SEGMENTO.test(p) && p !== '.' && p !== '..')) {
-    throw Object.assign(new Error(`Ruta inválida: ${path}`), { status: 400 });
-  }
-  return partes;
-}
+export { validarRuta } from './rutas.js';
 
 const coincide = (data, filtros) => filtros.every(([campo, valor]) => String(data?.[campo]) === String(valor));
 
@@ -28,8 +20,12 @@ export function crearDocumentosMemoria(semilla = []) {
   };
 }
 
+// Atlas da la dirección sin nombre de base y Mongo usaría "test": en ese caso va a "cobranza".
+export const nombreDeBase = (uri) => (/^mongodb(\+srv)?:\/\/[^/]+\/[^/?]+/.test(uri) ? undefined : 'cobranza');
+
 export async function crearDocumentosMongo(uri) {
-  await mongoose.connect(uri);
+  const dbName = nombreDeBase(uri);
+  await mongoose.connect(uri, { ...(dbName && { dbName }), serverSelectionTimeoutMS: 15000 });
   const col = mongoose.connection.collection('documentos');
   await col.createIndex({ coleccion: 1 });
   return {

@@ -24,6 +24,7 @@ import { resumenFacturacion } from '../../../server/src/engine/facturacion.js';
 import { vencimientoDe } from '../../../server/src/engine/cuentaCorriente.js';
 import { leerSeriePegada } from '../../../server/src/cotizaciones/importar.js';
 import { FUENTE_MEP, FUENTE_IPC } from '../../../server/src/cotizaciones/fuentes.js';
+import { validarRuta } from '../../../server/src/store/rutas.js';
 
 const porNombre = (a, b) => a.nombre.localeCompare(b.nombre);
 const ahora = () => new Date().toISOString();
@@ -65,6 +66,47 @@ function cargosDeCierre(cierre, clientesPorId) {
         },
       })),
     );
+}
+
+// Las colecciones de la base (las de arriba): el respaldo las lleva todas.
+export const COLECCIONES = ['clientes', 'ventas', 'cierres', 'cargos', 'pagos', 'facturacion', 'cotizaciones', 'parametros'];
+const FORMATO_RESPALDO = 'deenex-cobranza/respaldo';
+const VERSION_RESPALDO = 1;
+
+// Revisa un respaldo leído de un archivo y devuelve sus documentos, o dice qué tiene de malo.
+export function leerRespaldo(respaldo) {
+  if (respaldo?.formato !== FORMATO_RESPALDO || !Array.isArray(respaldo.documentos)) {
+    throw new Error('Ese archivo no es un respaldo de Deenex Cobranza.');
+  }
+  if (respaldo.version > VERSION_RESPALDO) throw new Error('Ese respaldo es de una versión más nueva de la app.');
+  for (const d of respaldo.documentos) {
+    const valido = (() => {
+      try {
+        return COLECCIONES.includes(validarRuta(String(d?.path), 2)[0]) && d.data && typeof d.data === 'object' && !Array.isArray(d.data);
+      } catch {
+        return false;
+      }
+    })();
+    if (!valido) throw new Error(`El respaldo tiene un documento que no reconozco (${String(d?.path)}).`);
+  }
+  return respaldo.documentos;
+}
+
+// Cuántos documentos trae un respaldo de cada colección, y de cuándo es.
+export function resumenRespaldo(respaldo) {
+  const cantidades = Object.fromEntries(COLECCIONES.map((c) => [c, 0]));
+  for (const { path } of leerRespaldo(respaldo)) cantidades[path.split('/')[0]]++;
+  return { creadoEn: respaldo.creadoEn ?? null, cantidades };
+}
+
+// El dólar y el IPC: la base nueva puede haberlos traído antes de cargar el respaldo. Se juntan los
+// valores y, en un mismo día o mes, queda el que ya estaba, que es el más nuevo.
+function juntarCotizacion(delRespaldo, actual) {
+  if (!actual) return delRespaldo;
+  if (!delRespaldo.valores) return actual;
+  const junto = { ...delRespaldo, ...actual, valores: { ...delRespaldo.valores, ...actual.valores } };
+  if (delRespaldo.detalle || actual.detalle) junto.detalle = { ...delRespaldo.detalle, ...actual.detalle };
+  return junto;
 }
 
 export function crearRepositorio(store) {
@@ -177,8 +219,41 @@ export function crearRepositorio(store) {
     return normalizarCliente(nuevo);
   }
 
+  // Los documentos con datos propios ('coleccion/id'). El dólar y el IPC no cuentan: la base nueva
+  // los trae sola.
+  async function documentosPropios() {
+    const propias = COLECCIONES.filter((c) => c !== 'cotizaciones');
+    const listas = await Promise.all(propias.map((c) => store.list(c)));
+    return propias.flatMap((c, i) => listas[i].map(({ id }) => `${c}/${id}`));
+  }
+  const colecciones = (paths) => [...new Set(paths.map((p) => p.split('/')[0]))];
+
   return {
     estado: async () => ({ guardaDatos: store.guardaDatos !== false }),
+    // Todo lo guardado, para bajarlo como respaldo o pasarlo a otra versión de la app.
+    async respaldo() {
+      const listas = await Promise.all(COLECCIONES.map((c) => store.list(c)));
+      const documentos = COLECCIONES.flatMap((c, i) => listas[i].map(({ id, data }) => ({ path: `${c}/${id}`, data })));
+      return { formato: FORMATO_RESPALDO, version: VERSION_RESPALDO, creadoEn: ahora(), documentos };
+    },
+    // Qué colecciones tienen datos propios: con alguna, no se carga un respaldo.
+    coleccionesConDatos: async () => colecciones(await documentosPropios()),
+    // Carga un respaldo en una base sin datos propios (la versión nueva, recién instalada). Si tiene
+    // algo que no viene en el respaldo no lo carga, para no mezclar dos bases; lo que sí viene en el
+    // respaldo no molesta, así que si una carga se corta se puede volver a cargar el mismo archivo.
+    async restaurarRespaldo(respaldo) {
+      const documentos = leerRespaldo(respaldo);
+      const enRespaldo = new Set(documentos.map((d) => d.path));
+      const ajenos = (await documentosPropios()).filter((p) => !enRespaldo.has(p));
+      if (ajenos.length) {
+        throw new Error(`Esta base ya tiene otros datos (${colecciones(ajenos).join(', ')}), así que el respaldo no se carga: se mezclarían dos bases.`);
+      }
+      for (const { path, data } of documentos) {
+        const nuevo = path.startsWith('cotizaciones/') ? juntarCotizacion(data, await store.get(path)) : data;
+        await store.set(path, sinVacios(nuevo));
+      }
+      return resumenRespaldo(respaldo);
+    },
     clientes,
     async cliente(id) {
       return normalizarCliente(await clienteGuardado(id));
