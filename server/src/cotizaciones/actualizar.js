@@ -25,6 +25,18 @@ async function pedirTexto(url, fetchImpl) {
   return new TextDecoder(latin ? 'latin1' : 'utf-8').decode(bytes);
 }
 
+// Por qué no se pudo traer una fuente, en una línea. fetch solo dice "fetch failed": el motivo real
+// viene en la causa, y si es el proxy de la red el que no deja pasar, lo dice así.
+function motivo(e, url) {
+  const host = new URL(url).host;
+  if (e.name === 'TimeoutError') return `${host} no respondió`;
+  const causa = e.cause?.message || e.cause?.code;
+  if (!causa) return e.message;
+  const proxy = /Proxy response \((\d+)\)/.exec(causa);
+  if (proxy) return `la red de la tarea no deja entrar a ${host} (${proxy[1]})`;
+  return `no pude conectarme con ${host}: ${causa}`;
+}
+
 // Trae cada fuente por separado: si una falla, las otras siguen. `crudo(nombre, texto)` recibe cada
 // respuesta tal cual llegó, antes de leerla, para revisar el formato si algo no se pudo leer.
 export async function traerFuentes({ fetch: fetchImpl = globalThis.fetch, crudo = null } = {}) {
@@ -34,7 +46,7 @@ export async function traerFuentes({ fetch: fetchImpl = globalThis.fetch, crudo 
       if (crudo) await crudo(nombre, texto);
       return { ok: true, valor: leer(texto) };
     } catch (e) {
-      return { ok: false, error: e.name === 'TimeoutError' ? `${new URL(url).host} no respondió` : e.message };
+      return { ok: false, error: motivo(e, url) };
     }
   };
   const [dolarhoy, ipcIndec, mepHistorico, ipcHistorico] = await Promise.all([

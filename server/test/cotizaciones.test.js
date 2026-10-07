@@ -211,6 +211,21 @@ test('Trae cada fuente por separado y guarda lo crudo antes de leerlo', async ()
   assert.deepEqual(crudos.map((c) => c[0]).sort(), ['argentinadatos-mep.json', 'dolarhoy.html', 'indec-ipc.csv']);
 });
 
+test('Si no llega a una fuente dice a cuál y por qué', async () => {
+  const corte = (causa) => Promise.reject(new TypeError('fetch failed', { cause: causa }));
+  const respuestas = {
+    [FUENTES.dolarhoy]: () => corte(Object.assign(new Error('Proxy response (403) !== 200 when HTTP Tunneling'), { code: 'UND_ERR_ABORTED' })),
+    [FUENTES.indec]: () => corte(Object.assign(new AggregateError([], ''), { code: 'ECONNREFUSED' })),
+    [FUENTES.mepHistorico]: () => Promise.reject(new DOMException('The operation was aborted due to timeout', 'TimeoutError')),
+    [FUENTES.ipc]: () => Promise.reject(new TypeError('fetch failed')),
+  };
+  const r = await traerFuentes({ fetch: async (url) => respuestas[url]() });
+  assert.deepEqual(r.dolarhoy, fallo('la red de la tarea no deja entrar a dolarhoy.com (403)'));
+  assert.deepEqual(r.ipcIndec, fallo('no pude conectarme con www.indec.gob.ar: ECONNREFUSED'));
+  assert.deepEqual(r.mepHistorico, fallo('api.argentinadatos.com no respondió'));
+  assert.deepEqual(r.ipcHistorico, fallo('fetch failed'));
+});
+
 test('Actualiza un monto por IPC componiendo los meses posteriores al de origen', () => {
   const ipc = { '2026-06': 0.016, '2026-07': 0.019, '2026-08': 0.021 };
   // 100.000 de mayo llevados a agosto: × 1,016 × 1,019 × 1,021

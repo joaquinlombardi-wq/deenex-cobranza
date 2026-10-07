@@ -9,10 +9,21 @@
 // --pedido    boton: pisa el MEP de dolarhoy del día; automatico (por defecto): solo lo completa.
 // --crudo     guarda ahí la respuesta de cada fuente tal cual llegó.
 // Imprime un resumen en JSON: los documentos a guardar, en orden (estado al final), y el resultado.
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { traerFuentes, armarActualizacion } from '../src/cotizaciones/actualizar.js';
+
+// Detrás de un proxy (como en las tareas en la nube de Claude Code) el fetch de Node no lo usa salvo
+// con NODE_USE_ENV_PROXY=1 (Node 22.21 o más nuevo), así que el script se vuelve a lanzar con eso.
+if ((process.env.HTTPS_PROXY || process.env.https_proxy) && !process.env.NODE_USE_ENV_PROXY) {
+  const { status } = spawnSync(process.execPath, [...process.execArgv, '--disable-warning=UNDICI-EHPA', ...process.argv.slice(1)], {
+    stdio: 'inherit',
+    env: { ...process.env, NODE_USE_ENV_PROXY: '1' },
+  });
+  process.exit(status ?? 1);
+}
 
 const { values: opciones, positionals } = parseArgs({
   options: {

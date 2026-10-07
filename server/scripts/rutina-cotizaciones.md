@@ -3,8 +3,8 @@
 Es el texto de la rutina de Claude Code que actualiza el dólar MEP (dolarhoy) y el IPC (INDEC) en la
 app de cobranza publicada en claude.ai. Corre sola los días hábiles a las 17:10 (hora de Buenos Aires)
 y la arranca también el botón "Actualizar dólar e IPC" de la app, que le agrega el texto
-`pedido: boton`. Tiene que correr en un entorno con acceso a dolarhoy.com, www.indec.gob.ar y
-api.argentinadatos.com.
+`pedido: boton`. Tiene que correr en un entorno con acceso a dolarhoy.com, www.indec.gob.ar,
+api.argentinadatos.com y github.com.
 
 Si se cambia este texto, hay que actualizar la rutina con el mismo texto (`update_trigger`).
 
