@@ -84,12 +84,12 @@ export default function ActualizarCotizaciones({ onActualizado, compacto = false
   }
 
   // Espera el resultado: lo deja la tarea en cotizaciones/estado. Cada tanto le pregunta a Claude Code
-  // cómo terminó la corrida, por si falló antes de dejarlo.
+  // si la corrida falló. La rutina despierta la conversación del hilo que la corre, y Claude Code da
+  // la corrida por buena apenas la entrega, así que un "terminó" no quiere decir que ya haya valores.
   useEffect(() => {
     if (!pedido) return undefined;
     let vigente = true;
     let vuelta = 0;
-    let terminoSinResultado = 0;
     const id = setInterval(async () => {
       vuelta++;
       const u = await api.estadoCotizaciones().catch(() => null);
@@ -104,12 +104,11 @@ export default function ActualizarCotizaciones({ onActualizado, compacto = false
       if (vuelta % PREGUNTAR_A_CLAUDE_CADA) return;
       const corrida = await ultimaCorrida();
       // Un minuto de margen por si los relojes no coinciden.
-      if (!vigente || !corrida?.finished_at || !(instante(corrida.fired_at) >= Date.parse(pedido.desde) - 60000)) return;
-      const fallo = !/^(succe|complet)/i.test(corrida.status ?? '');
-      if (fallo || ++terminoSinResultado > 1) {
+      if (!vigente || !corrida || !(instante(corrida.fired_at) >= Date.parse(pedido.desde) - 60000)) return;
+      if (/fail|error|cancel/i.test(corrida.status ?? '')) {
         recordarPedido(null);
         setPedido(null);
-        setError(fallo ? 'La tarea falló antes de traer los valores. Probá de nuevo en un rato.' : 'La tarea terminó pero no dejó los valores. Probá de nuevo en un rato.');
+        setError('La tarea falló antes de traer los valores. Probá de nuevo en un rato.');
       }
     }, CADA);
     return () => {
