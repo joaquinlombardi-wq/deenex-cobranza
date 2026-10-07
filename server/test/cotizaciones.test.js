@@ -219,11 +219,52 @@ test('Si no llega a una fuente dice a cuál y por qué', async () => {
     [FUENTES.mepHistorico]: () => Promise.reject(new DOMException('The operation was aborted due to timeout', 'TimeoutError')),
     [FUENTES.ipc]: () => Promise.reject(new TypeError('fetch failed')),
   };
-  const r = await traerFuentes({ fetch: async (url) => respuestas[url]() });
+  const r = await traerFuentes({ fetch: async (url) => respuestas[url](), esperar: async () => {} });
   assert.deepEqual(r.dolarhoy, fallo('la red de la tarea no deja entrar a dolarhoy.com (403)'));
   assert.deepEqual(r.ipcIndec, fallo('no pude conectarme con www.indec.gob.ar: ECONNREFUSED'));
   assert.deepEqual(r.mepHistorico, fallo('api.argentinadatos.com no respondió'));
   assert.deepEqual(r.ipcHistorico, fallo('fetch failed'));
+});
+
+// Recortes de lo que respondieron dolarhoy y el INDEC el 7/10/2026.
+const DOLARHOY_REAL = `<div class="tile is-ancestor is-vertical"><div class="tile cotizacion_value"><div class="tile is-parent is-4"><div class="tile is-child title">Dólar MEP</div></div><div class="tile is-parent is-8"><div class="tile is-child"><div class="topic">Compra</div><div class="value">$1.539,60</div></div><div class="tile is-child"><div class="topic">Venta</div><div class="value">$1.544,40</div></div></div></div><div class="tile update"><div class="tile is-parent"><div class="tile is-child"><span>Actualizado por última vez: 07/10/26 07:58 AM</span></div></div></div></div>
+<div class="tile is-child"><div class="title first">Entidad</div><div class="compra first">Compra</div><div class="venta first">Venta</div></div><div class="tile is-child"><a href="/cotizaciondolarblue"><div class="title">Dólar Libre</div><div class="compra">1.530,00</div><div class="venta">1.550,00</div></a></div>`;
+
+const INDEC_REAL = [
+  'Codigo;Descripcion;Clasificador;Periodo;Indice_IPC;v_m_IPC;v_i_a_IPC;Region',
+  '0;NIVEL GENERAL;Nivel general y divisiones COICOP;201612;100;NA;NA;GBA',
+  '0;NIVEL GENERAL;Nivel general y divisiones COICOP;201612;100;NA;NA;Nac',
+  '0;NIVEL GENERAL;Nivel general y divisiones COICOP;202607;12078,7372;2,3;34;GBA',
+  '0;NIVEL GENERAL;Nivel general y divisiones COICOP;202607;12076,3937;2,1;33,8;Nacional',
+  '0;NIVEL GENERAL;Nivel general y divisiones COICOP;202608;12276,812;1,6;33,7;GBA',
+  '0;NIVEL GENERAL;Nivel general y divisiones COICOP;202608;12276,766;1,7;33,5;Nacional',
+  '10;Educaci\xf3n;Nivel general y divisiones COICOP;202608;11519,721;2,5;40;Nacional',
+].join('\r\n') + '\r\n';
+
+test('Lee el MEP de la página real de dolarhoy', () => {
+  assert.deepEqual(leerMepDolarhoy(DOLARHOY_REAL), { compra: 1539.6, venta: 1544.4, publicado: '2026-10-07T07:58' });
+});
+
+test('Lee el nivel general nacional del CSV real del INDEC', () => {
+  assert.deepEqual(leerIpcIndec(INDEC_REAL), { '2026-07': 0.021, '2026-08': 0.017 });
+});
+
+test('Si se corta la conexión con el INDEC vuelve a probar', async () => {
+  const corte = () => Promise.reject(new TypeError('fetch failed', { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) }));
+  let intentos = 0;
+  const esperas = [];
+  const respuestas = {
+    [FUENTES.dolarhoy]: () => new Response(DOLARHOY_REAL),
+    [FUENTES.indec]: () => (++intentos < 3 ? corte() : new Response(Buffer.from(INDEC_REAL, 'latin1'), { headers: { 'content-type': 'application/octet-stream' } })),
+    [FUENTES.mepHistorico]: () => new Response('[]'),
+    [FUENTES.ipc]: () => new Response('', { status: 503 }),
+  };
+  const r = await traerFuentes({ fetch: async (url) => respuestas[url](), esperar: async (ms) => esperas.push(ms) });
+  assert.equal(intentos, 3);
+  assert.deepEqual(esperas, [3000, 6000]);
+  assert.deepEqual(r.ipcIndec, ok({ '2026-07': 0.021, '2026-08': 0.017 }));
+  // Una respuesta con error no se reintenta.
+  assert.deepEqual(r.ipcHistorico, fallo('api.argentinadatos.com respondió 503'));
 });
 
 test('Actualiza un monto por IPC componiendo los meses posteriores al de origen', () => {

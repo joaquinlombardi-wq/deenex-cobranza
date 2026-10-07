@@ -16,6 +16,10 @@ const ESPERA_MAXIMA = 30000;
 const AGENTE = 'Mozilla/5.0 (compatible; DeenexCobranza/1.0)';
 // Una lectura de dolarhoy que se aleja más que esto del último MEP conocido se descarta.
 const SALTO_MAXIMO = 0.25;
+// Si se corta la conexión antes de que conteste (le pasa al INDEC desde la nube), se vuelve a probar.
+const INTENTOS = 4;
+const PAUSA = 3000;
+const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function pedirTexto(url, fetchImpl) {
   const res = await fetchImpl(url, { headers: { 'User-Agent': AGENTE }, redirect: 'follow', signal: AbortSignal.timeout(ESPERA_MAXIMA) });
@@ -39,10 +43,21 @@ function motivo(e, url) {
 
 // Trae cada fuente por separado: si una falla, las otras siguen. `crudo(nombre, texto)` recibe cada
 // respuesta tal cual llegó, antes de leerla, para revisar el formato si algo no se pudo leer.
-export async function traerFuentes({ fetch: fetchImpl = globalThis.fetch, crudo = null } = {}) {
+// Un corte de conexión se reintenta; una respuesta con error o un tiempo de espera agotado, no.
+export async function traerFuentes({ fetch: fetchImpl = globalThis.fetch, crudo = null, esperar = dormir } = {}) {
+  const pedir = async (url) => {
+    for (let intento = 1; ; intento++) {
+      try {
+        return await pedirTexto(url, fetchImpl);
+      } catch (e) {
+        if (intento >= INTENTOS || e.name === 'TimeoutError' || !(e instanceof TypeError)) throw e;
+        await esperar(PAUSA * intento);
+      }
+    }
+  };
   const traer = async (nombre, url, leer) => {
     try {
-      const texto = await pedirTexto(url, fetchImpl);
+      const texto = await pedir(url);
       if (crudo) await crudo(nombre, texto);
       return { ok: true, valor: leer(texto) };
     } catch (e) {
