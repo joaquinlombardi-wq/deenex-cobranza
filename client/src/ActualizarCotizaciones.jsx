@@ -30,7 +30,8 @@ function pedidoGuardado() {
 }
 
 const hora = (publicado) => (publicado ? publicado.slice(11, 16) : null);
-const instante = (x) => (typeof x === 'number' ? x : Date.parse(x));
+// Claude Code da las horas con nanosegundos; algunos navegadores solo leen hasta milisegundos.
+const instante = (x) => (typeof x === 'number' ? x : Date.parse(String(x).replace(/(\.\d{3})\d+/, '$1')));
 
 // "MEP venta 1.549,80 del 07/10/2026 (dolarhoy 10:44) · IPC de Agosto 2026: 1,9 %"
 function Resultado({ ultima }) {
