@@ -15,6 +15,17 @@ npm run dev:client   # pantallas en http://localhost:5173
 
 Con base real: `MONGODB_URI=mongodb://127.0.0.1:27017/deenex-cobranza APP_CLAVE=una-clave npm run dev:server` (con base real no arranca sin clave). `npm run build && npm start` sirve la app armada y la API juntas en :4000, como en Render.
 
+## Llevarla a producción
+
+Lo que hace falta para correrla en otra infraestructura (Render más abajo es solo la opción gratis):
+
+- Node 22 o más nuevo y una base MongoDB. `npm ci && npm run build && npm start` sirve la app y la API juntas en `PORT` (4000 si no está).
+- Variables: `MONGODB_URI` (si la dirección no trae nombre de base, guarda en `cobranza`), `APP_CLAVE` (con base real es obligatoria) y `APP_USUARIO` (`deenex` si no está). El acceso es HTTP Basic con esos dos, salvo `/api/salud`, que queda abierto para el control de salud.
+- Salida a internet hacia dolarhoy.com, www.indec.gob.ar y api.argentinadatos.com: el server trae el dólar MEP y el IPC la primera vez que se usa cada día y cuando se toca el botón.
+- Datos: todo vive en la colección `documentos`, con la ruta como `_id` (ver la tabla de Documentos). Lo que Joaco cargó en la versión de claude.ai se pasa con Respaldo: Bajar respaldo ahí y Cargar estos datos en la nueva, con la base vacía. El archivo es `{ formato: 'deenex-cobranza/respaldo', version: 1, creadoEn, documentos: [{ path, data }] }`.
+- Para integrarla a otro sistema: el motor (`server/src/engine/`) no conoce Mongo ni Express, y `server/test/octubre-2026.test.js` es la referencia contra lo facturado de verdad. Las ventas de la plataforma entran por `POST /api/ventas` (ver Ventas desde la plataforma).
+- Qué cobra y por qué, con las decisiones de negocio: [`docs/estructura-producto.md`](docs/estructura-producto.md).
+
 ## Estructura
 
 - `server/src/engine/` · motor puro (sin base de datos): `liquidar.js` (`liquidarCliente(cliente, { periodo, mep, ipc, ventas })`), `cuentaCorriente.js` (`estadoDeCuenta({ cargos, pagos, hoy })`), `facturacion.js` (`resumenFacturacion`: MRR y extra jobs mes a mes) y `cotizaciones.js` (series de MEP e IPC).
