@@ -154,7 +154,9 @@ export function armarActualizacion({ actuales = {}, fuentes, ahora, pedido = 'au
   // IPC: el historial de ArgentinaDatos y, encima, lo que publica el INDEC.
   const ipcIndec = fuentes.ipcIndec.ok ? fuentes.ipcIndec.valor : {};
   const ipcHistorico = fuentes.ipcHistorico.ok ? fuentes.ipcHistorico.valor : {};
-  const ipc = { ...actuales.ipc?.valores, ...ipcHistorico, ...ipcIndec };
+  // Manda el INDEC; si hoy no se pudo leer, lo ya guardado (que vino del INDEC) no lo pisa ArgentinaDatos,
+  // que tiene otros valores en algunos meses de 2017: solo completa los meses que faltan.
+  const ipc = { ...ipcHistorico, ...actuales.ipc?.valores, ...ipcIndec };
   if (Object.keys(ipc).length && !iguales(ipc, actuales.ipc?.valores)) {
     documentos.push({ id: 'ipc', data: { valores: ipc, fuente: FUENTE_IPC_AUTOMATICA, origen: 'automatico', actualizado: ahora } });
   }

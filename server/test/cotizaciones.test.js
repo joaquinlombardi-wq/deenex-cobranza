@@ -190,6 +190,14 @@ test('Si una fuente falla sigue con las otras, avisa y no borra lo que había', 
   assert.deepEqual(estado.ultima.errores.map((e) => e.fuente), ['dolarhoy', 'INDEC']);
 });
 
+test('Si el INDEC no responde, ArgentinaDatos no pisa lo que ya vino del INDEC', () => {
+  // ArgentinaDatos tiene otros valores en algunos meses de 2017 (enero: 1,3% contra 1,6% del INDEC).
+  const fuentes = { ...fuentesBase(), ipcIndec: fallo('www.indec.gob.ar no respondió'), ipcHistorico: ok({ '1943-03': 0.016, '2017-01': 0.013, '2026-08': 0.017 }) };
+  const actuales = { ipc: { valores: { '2017-01': 0.016, '2026-08': 0.017 } } };
+  const { documentos } = armarActualizacion({ actuales, fuentes, ahora: '2026-10-13T20:11:00.000Z' });
+  assert.deepEqual(documentos.find((d) => d.id === 'ipc').data.valores, { '1943-03': 0.016, '2017-01': 0.016, '2026-08': 0.017 });
+});
+
 test('Trae cada fuente por separado y guarda lo crudo antes de leerlo', async () => {
   const respuestas = {
     [FUENTES.dolarhoy]: () => new Response(PAGINA_DOLARHOY, { headers: { 'content-type': 'text/html; charset=utf-8' } }),
